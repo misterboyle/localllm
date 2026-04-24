@@ -2,3 +2,9 @@ models/*.pid
 *.log
 *.gguf
 .claude/
+
+
+# Local model config (contains machine-specific paths)
+models.conf
+*.pid
+*.log
