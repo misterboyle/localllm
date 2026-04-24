@@ -61,7 +61,6 @@ nohup $LLAMA_SERVER \
   --jinja \
   --gpu-layers 99 -c 262144 -np 1 \
   --host 127.0.0.1 \
-  --api-key sk-local \
   > "$HOME/.localllm/dense.log" 2>&1 &
 echo $! > "$DENSE_PID_DIR/dense.pid"
 log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
@@ -76,7 +75,6 @@ nohup $LLAMA_SERVER \
    --jinja \
    --gpu-layers 99 -c 1048576 -np 4 \
    --host 127.0.0.1 \
-   --api-key sk-local \
    > "$HOME/.localllm/moe.log" 2>&1 &
 echo $! > "$DENSE_PID_DIR/moe.pid"
 log "Moe server PID: $(cat $DENSE_PID_DIR/moe.pid)"
