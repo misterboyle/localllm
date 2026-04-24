@@ -1,0 +1,4 @@
+models/*.pid
+*.log
+*.gguf
+.claude/
