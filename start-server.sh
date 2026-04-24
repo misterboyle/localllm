@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LLAMA_SERVER="$HOME/llama.cpp-turbo/build/bin/llama-server"
-MODEL_DIR="$HOME/cogitor_backend/models"
-DENSE_MODEL="$MODEL_DIR/qwen3.6-27b-q6k.gguf"
-MOE_MODEL="$MODEL_DIR/qwen3.6-35b-a3b-q6k-xl.gguf"
+MODEL_DIR="$SCRIPT_DIR/models"
+DENSE_MODEL="$MODEL_DIR/Qwen3.6-27B-UD-Q6_K_XL.gguf"
+MOE_MODEL="$MODEL_DIR/Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf"
 
 DENSE_PORT=30080
 MOE_PORT=30081
@@ -46,7 +47,9 @@ nohup $LLAMA_SERVER \
   --model "$DENSE_MODEL" \
   --port "$DENSE_PORT" \
   -ctk q8_0 -ctv turbo4 \
-  --fa on -ngl 99 -c 262144 \
+  --flash-attn on \
+  --jinja \
+  --gpu-layers 99 -c 262144 -np 1 \
   --host 127.0.0.1 \
   --api-key sk-local \
   > "$MODEL_DIR/dense.log" 2>&1 &
@@ -59,10 +62,12 @@ nohup $LLAMA_SERVER \
   --model "$MOE_MODEL" \
   --port "$MOE_PORT" \
   -ctk q8_0 -ctv turbo4 \
-  --fa on -ngl 99 -c 262144 \
-  --host 127.0.0.1 \
-  --api-key sk-local \
-  > "$MODEL_DIR/moe.log" 2>&1 &
+  --flash-attn on \
+   --jinja \
+   --gpu-layers 99 -c 1048576 -np 4 \
+   --host 127.0.0.1 \
+   --api-key sk-local \
+   > "$MODEL_DIR/moe.log" 2>&1 &
 echo $! > "$MOE_PID_FILE"
 log "Moe server PID: $(cat $MOE_PID_FILE)"
 
