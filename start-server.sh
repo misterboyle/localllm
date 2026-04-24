@@ -20,6 +20,19 @@ MOE_PORT=30081
 DENSE_PID_DIR="$HOME/.localllm/pids"
 MOE_PID_DIR="$HOME/.localllm/pids"
 
+# Defaults (overridden by models.conf if present)
+DENSE_THREADS=q8_0
+DENSE_VARIANT=turbo4
+DENSE_GPULAYERS=99
+DENSE_CONTEXT=262144
+DENSE_SLOTS=2
+
+MOE_THREADS=q8_0
+MOE_VARIANT=turbo4
+MOE_GPULAYERS=99
+MOE_CONTEXT=1048576
+MOE_SLOTS=4
+
 log() {
   echo "[$(date '+%H:%M:%S')] $*"
 }
@@ -52,32 +65,32 @@ check_model "moe" "$MOE_MODEL" || exit 1
 mkdir -p "$DENSE_PID_DIR"
 
 # Start dense server (port 30080)
-log "Starting dense server on port $DENSE_PORT..."
+log "Starting dense server on port $DENSE_PORT (context=$DENSE_CONTEXT, slots=$DENSE_SLOTS)..."
 nohup $LLAMA_SERVER \
   --model "$DENSE_MODEL" \
   --port "$DENSE_PORT" \
-  -ctk q8_0 -ctv turbo4 \
+  -ctk "$DENSE_THREADS" -ctv "$DENSE_VARIANT" \
   --flash-attn on \
   --jinja \
-  --gpu-layers 99 -c 262144 -np 1 \
+  --gpu-layers $DENSE_GPULAYERS -c $DENSE_CONTEXT -np $DENSE_SLOTS \
   --host 127.0.0.1 \
   > "$HOME/.localllm/dense.log" 2>&1 &
 echo $! > "$DENSE_PID_DIR/dense.pid"
 log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
 
 # Start moe server (port 30081)
-log "Starting moe server on port $MOE_PORT..."
+log "Starting moe server on port $MOE_PORT (context=$MOE_CONTEXT, slots=$MOE_SLOTS)..."
 nohup $LLAMA_SERVER \
   --model "$MOE_MODEL" \
   --port "$MOE_PORT" \
-  -ctk q8_0 -ctv turbo4 \
-  --flash-attn on \
+  -ctk "$MOE_THREADS" -ctv "$MOE_VARIANT" \
    --jinja \
-   --gpu-layers 99 -c 1048576 -np 4 \
+   --flash-attn on \
+   --gpu-layers $MOE_GPULAYERS -c $MOE_CONTEXT -np $MOE_SLOTS \
    --host 127.0.0.1 \
    > "$HOME/.localllm/moe.log" 2>&1 &
-echo $! > "$DENSE_PID_DIR/moe.pid"
-log "Moe server PID: $(cat $DENSE_PID_DIR/moe.pid)"
+echo $! > "$MOE_PID_DIR/moe.pid"
+log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
 
 log "Waiting for servers to be ready..."
 for i in $(seq 1 60); do
