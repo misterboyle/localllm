@@ -34,7 +34,7 @@ DENSE_SLOTS=1
 MOE_THREADS=q8_0
 MOE_VARIANT=turbo4
 MOE_GPULAYERS=99
-MOE_CONTEXT=1048576
+MOE_CONTEXT=2097152
 MOE_SLOTS=8
 
 log() {
@@ -78,7 +78,7 @@ nohup $LLAMA_SERVER \
   --jinja \
   --gpu-layers $DENSE_GPULAYERS -c $DENSE_CONTEXT -np $DENSE_SLOTS \
   --host 127.0.0.1 \
-  > "$HOME/.localllm/dense.log" 2>&1 &
+  > >(sed 's/^/[DENSE] /' >> "$HOME/.localllm/dense.log") 2>&1 &
 echo $! > "$DENSE_PID_DIR/dense.pid"
 log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
 
@@ -92,7 +92,7 @@ nohup $LLAMA_SERVER \
    --flash-attn on \
    --gpu-layers $MOE_GPULAYERS -c $MOE_CONTEXT -np $MOE_SLOTS \
    --host 127.0.0.1 \
-   > "$HOME/.localllm/moe.log" 2>&1 &
+   > >(sed 's/^/[MOE] /' >> "$HOME/.localllm/moe.log") 2>&1 &
 echo $! > "$MOE_PID_DIR/moe.pid"
 log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
 
@@ -104,8 +104,8 @@ for i in $(seq 1 60); do
     log "  Dense:  http://localhost:$DENSE_PORT/v1"
     log "  Moe:    http://localhost:$MOE_PORT/v1"
     log "Press Ctrl+C to stop."
-    wait
-    break
+    tail -f "$HOME/.localllm/dense.log" "$HOME/.localllm/moe.log" --pid=$$ 2>/dev/null || true
+    exit 0
   fi
   sleep 1
 done
