@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF_FILE="$SCRIPT_DIR/models.conf"
+CONF_FILE="$HOME/.localllm/models.conf"
 
-# Load model config
+# Load model config (per-user, not in git)
 if [ -f "$CONF_FILE" ]; then
   # shellcheck source=models.conf
   . "$CONF_FILE"
@@ -25,17 +25,21 @@ DENSE_PID_DIR="$HOME/.localllm/pids"
 MOE_PID_DIR="$HOME/.localllm/pids"
 
 # Defaults (overridden by models.conf if present)
-DENSE_THREADS=q8_0
-DENSE_VARIANT=turbo4
-DENSE_GPULAYERS=99
-DENSE_CONTEXT=262144
-DENSE_SLOTS=2
+DENSE_ENABLED=${DENSE_ENABLED:-0}  # Set to 1 in models.conf to enable dense server
+DENSE_THREADS=${DENSE_THREADS:-q8_0}
+DENSE_VARIANT=${DENSE_VARIANT:-turbo4}
+DENSE_GPULAYERS=${DENSE_GPULAYERS:-99}
+DENSE_PER_SLOT_CONTEXT=${DENSE_PER_SLOT_CONTEXT:-262144}  # 262K per slot
+DENSE_SLOTS=${DENSE_SLOTS:-2}
+DENSE_CONTEXT=$((DENSE_PER_SLOT_CONTEXT * DENSE_SLOTS))
 
+MOE_ENABLED=${MOE_ENABLED:-1}  # Set to 0 in models.conf to disable moe server
 MOE_THREADS=q8_0
 MOE_VARIANT=turbo4
 MOE_GPULAYERS=99
-MOE_CONTEXT=2097152
+MOE_PER_SLOT_CONTEXT=262144  # 262K per slot
 MOE_SLOTS=8
+MOE_CONTEXT=$((MOE_PER_SLOT_CONTEXT * MOE_SLOTS))
 
 log() {
   echo "[$(date '+%H:%M:%S')] $*"
@@ -44,7 +48,7 @@ log() {
 stop_servers() {
   log "Stopping servers..."
   [ -f "$DENSE_PID_DIR/dense.pid" ] && kill "$(cat "$DENSE_PID_DIR/dense.pid")" 2>/dev/null && rm "$DENSE_PID_DIR/dense.pid"
-  [ -f "$DENSE_PID_DIR/moe.pid" ] && kill "$(cat "$DENSE_PID_DIR/moe.pid")" 2>/dev/null && rm "$DENSE_PID_DIR/moe.pid"
+  [ -f "$MOE_PID_DIR/moe.pid" ] && kill "$(cat "$MOE_PID_DIR/moe.pid")" 2>/dev/null && rm "$MOE_PID_DIR/moe.pid"
   log "Stopped."
   exit 0
 }
@@ -63,54 +67,75 @@ check_model() {
   return 0
 }
 
-check_model "dense" "$DENSE_MODEL" || exit 1
-check_model "moe" "$MOE_MODEL" || exit 1
+if [ "$DENSE_ENABLED" = "1" ]; then
+  check_model "dense" "$DENSE_MODEL" || exit 1
+fi
+if [ "$MOE_ENABLED" = "1" ]; then
+  check_model "moe" "$MOE_MODEL" || exit 1
+fi
 
 mkdir -p "$DENSE_PID_DIR"
+mkdir -p "$MOE_PID_DIR"
 
-# Start dense server (port 30080)
-log "Starting dense server on port $DENSE_PORT (context=$DENSE_CONTEXT, slots=$DENSE_SLOTS)..."
-nohup $LLAMA_SERVER \
-  --model "$DENSE_MODEL" \
-  --port "$DENSE_PORT" \
-  -ctk "$DENSE_THREADS" -ctv "$DENSE_VARIANT" \
-  --flash-attn on \
-  --jinja \
-  --gpu-layers $DENSE_GPULAYERS -c $DENSE_CONTEXT -np $DENSE_SLOTS \
-  --host 127.0.0.1 \
-  > >(sed 's/^/[DENSE] /' >> "$HOME/.localllm/dense.log") 2>&1 &
-echo $! > "$DENSE_PID_DIR/dense.pid"
-log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
+# Start dense server (port 30080) if enabled
+if [ "$DENSE_ENABLED" = "1" ]; then
+  log "Starting dense server on port $DENSE_PORT (per-slot context=$DENSE_PER_SLOT_CONTEXT, slots=$DENSE_SLOTS, total context=$DENSE_CONTEXT)..."
+  nohup $LLAMA_SERVER \
+    --model "$DENSE_MODEL" \
+    --port "$DENSE_PORT" \
+    -ctk "$DENSE_THREADS" -ctv "$DENSE_VARIANT" \
+    --flash-attn on \
+    --jinja \
+    --gpu-layers $DENSE_GPULAYERS -c $DENSE_CONTEXT -np $DENSE_SLOTS \
+    --host 127.0.0.1 \
+    > >(sed 's/^/[DENSE] /' >> "$HOME/.localllm/dense.log") 2>&1 &
+  echo $! > "$DENSE_PID_DIR/dense.pid"
+  log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
+fi
 
-# Start moe server (port 30081)
-log "Starting moe server on port $MOE_PORT (context=$MOE_CONTEXT, slots=$MOE_SLOTS)..."
-nohup $LLAMA_SERVER \
-  --model "$MOE_MODEL" \
-  --port "$MOE_PORT" \
-  -ctk "$MOE_THREADS" -ctv "$MOE_VARIANT" \
-   --jinja \
-   --flash-attn on \
-   --gpu-layers $MOE_GPULAYERS -c $MOE_CONTEXT -np $MOE_SLOTS \
-   --host 127.0.0.1 \
-   > >(sed 's/^/[MOE] /' >> "$HOME/.localllm/moe.log") 2>&1 &
-echo $! > "$MOE_PID_DIR/moe.pid"
-log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
+# Start moe server (port 30081) if enabled
+if [ "$MOE_ENABLED" = "1" ]; then
+  log "Starting moe server on port $MOE_PORT (per-slot context=$MOE_PER_SLOT_CONTEXT, slots=$MOE_SLOTS, total context=$MOE_CONTEXT)..."
+  nohup $LLAMA_SERVER \
+    --model "$MOE_MODEL" \
+    --port "$MOE_PORT" \
+    -ctk "$MOE_THREADS" -ctv "$MOE_VARIANT" \
+    --jinja \
+    --flash-attn on \
+    --gpu-layers $MOE_GPULAYERS -c $MOE_CONTEXT -np $MOE_SLOTS \
+    --host 127.0.0.1 \
+    > >(sed 's/^/[MOE] /' >> "$HOME/.localllm/moe.log") 2>&1 &
+  echo $! > "$MOE_PID_DIR/moe.pid"
+  log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
+fi
 
-log "Waiting for servers to be ready..."
+# Build health check and log file list based on enabled servers
+HEALTH_CHECK=""
+LOG_FILES=""
+if [ "$DENSE_ENABLED" = "1" ]; then
+  HEALTH_CHECK="${HEALTH_CHECK}curl -sf http://localhost:$DENSE_PORT/health > /dev/null 2>&1"
+  LOG_FILES="$LOG_FILES $HOME/.localllm/dense.log"
+fi
+if [ "$MOE_ENABLED" = "1" ]; then
+  [ -n "$HEALTH_CHECK" ] && HEALTH_CHECK="$HEALTH_CHECK && "
+  HEALTH_CHECK="${HEALTH_CHECK}curl -sf http://localhost:$MOE_PORT/health > /dev/null 2>&1"
+  LOG_FILES="$LOG_FILES $HOME/.localllm/moe.log"
+fi
+
+log "Waiting for server(s) to be ready..."
 for i in $(seq 1 60); do
-  if curl -sf http://localhost:$DENSE_PORT/health > /dev/null 2>&1 && \
-     curl -sf http://localhost:$MOE_PORT/health > /dev/null 2>&1; then
-    log "Both servers ready."
-    log "  Dense:  http://localhost:$DENSE_PORT/v1"
-    log "  Moe:    http://localhost:$MOE_PORT/v1"
+  if eval "$HEALTH_CHECK"; then
+    log "Servers ready."
+    [ "$DENSE_ENABLED" = "1" ] && log "  Dense: http://localhost:$DENSE_PORT/v1"
+    [ "$MOE_ENABLED" = "1" ] && log "  Moe:   http://localhost:$MOE_PORT/v1"
     log "Press Ctrl+C to stop."
-    tail -f "$HOME/.localllm/dense.log" "$HOME/.localllm/moe.log" --pid=$$ 2>/dev/null || true
+    tail -f $LOG_FILES --pid=$$ 2>/dev/null || true
     exit 0
   fi
   sleep 1
 done
 
-log "Timed out waiting for servers. Check logs:"
-log "  Dense: $HOME/.localllm/dense.log"
-log "  Moe:   $HOME/.localllm/moe.log"
+log "Timed out waiting for server(s). Check logs:"
+[ "$DENSE_ENABLED" = "1" ] && log "  Dense: $HOME/.localllm/dense.log"
+[ "$MOE_ENABLED" = "1" ] && log "  Moe:   $HOME/.localllm/moe.log"
 exit 1

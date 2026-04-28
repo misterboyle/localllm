@@ -1,0 +1,28 @@
+# Local model configuration for start-server.sh
+# Copy to ~/.localllm/models.conf and edit as needed
+# This file is per-user and not tracked in git
+
+# Model directory (where .gguf files are stored)
+# MODEL_DIR="$HOME/.localllm/models"
+
+# Model files (relative to MODEL_DIR or absolute paths)
+# DENSE_MODEL="Qwen3.6-27B-UD-Q6_K_XL.gguf"
+# MOE_MODEL="Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf"
+
+# Server enable flags (set to 1 to enable, 0 to disable)
+# DENSE_ENABLED=0   # Dense server disabled by default
+# MOE_ENABLED=1     # MoE server enabled by default
+
+# Dense server settings
+# DENSE_THREADS=q8_0
+# DENSE_VARIANT=turbo4
+# DENSE_GPULAYERS=99
+# DENSE_PER_SLOT_CONTEXT=262144  # 262K per slot
+# DENSE_SLOTS=2
+
+# MoE server settings
+# MOE_THREADS=q8_0
+# MOE_VARIANT=turbo4
+# MOE_GPULAYERS=99
+# MOE_PER_SLOT_CONTEXT=262144  # 262K per slot
+# MOE_SLOTS=8
