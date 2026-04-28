@@ -1,6 +1,13 @@
 # Local model configuration for start-server.sh
 # Copy to ~/.localllm/models.conf and edit as needed
 # This file is per-user and not tracked in git
+#
+# NOTE: OpenCode does not read this file. To keep opencode in sync with your
+# local servers, manually update ~/.config/opencode/opencode.jsonc or see
+# opencode.jsonc.example in this repo for the corresponding provider config.
+
+# llama-server binary path
+# LLAMA_SERVER="$HOME/llama.cpp-turbo/build/bin/llama-server"
 
 # Model directory (where .gguf files are stored)
 # MODEL_DIR="$HOME/.localllm/models"
@@ -8,6 +15,14 @@
 # Model files (relative to MODEL_DIR or absolute paths)
 # DENSE_MODEL="Qwen3.6-27B-UD-Q6_K_XL.gguf"
 # MOE_MODEL="Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf"
+
+# Server ports
+# DENSE_PORT=30080
+# MOE_PORT=30081
+
+# PID file directories
+# DENSE_PID_DIR="$HOME/.localllm/pids"
+# MOE_PID_DIR="$HOME/.localllm/pids"
 
 # Server enable flags (set to 1 to enable, 0 to disable)
 # DENSE_ENABLED=0   # Dense server disabled by default

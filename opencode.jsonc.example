@@ -1,0 +1,42 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llama-moe": {
+      "name": "Llama.cpp MoE",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://localhost:30081/v1",
+        "apiKey": "sk-local"
+      },
+      "models": {
+        "qwen3.6-35b-a3b": {
+          "name": "Qwen3.6-35B-A3B",
+          "maxTokens": 98304,
+          "limit": {
+            "context": 262144,
+            "output": 8192
+          }
+        }
+      }
+    },
+    "llama-dense": {
+      "name": "Llama.cpp Dense",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://localhost:30080/v1",
+        "apiKey": "sk-local"
+      },
+      "models": {
+        "qwen3.6-27b": {
+          "name": "Qwen3.6-27B",
+          "maxTokens": 40960,
+          "limit": {
+            "context": 262144,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "llama-moe/qwen3.6-35b-a3b"
+}
