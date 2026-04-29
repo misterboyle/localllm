@@ -33,6 +33,12 @@ DENSE_PER_SLOT_CONTEXT=${DENSE_PER_SLOT_CONTEXT:-262144}  # 262K per slot
 DENSE_SLOTS=${DENSE_SLOTS:-2}
 DENSE_CONTEXT=$((DENSE_PER_SLOT_CONTEXT * DENSE_SLOTS))
 
+# KV cache tuning (see KV-CACHE-ANALYSIS.md for details)
+DENSE_CACHE_RAM=${DENSE_CACHE_RAM:-32768}       # 32GB prompt cache RAM
+DENSE_CTX_CHECKPOINTS=${DENSE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
+DENSE_CHECKPOINT_EVERY_NT=${DENSE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
+DENSE_CACHE_REUSE=${DENSE_CACHE_REUSE:-128}  # Min chunk size for KV cache reuse
+
 MOE_ENABLED=${MOE_ENABLED:-1}
 MOE_THREADS=${MOE_THREADS:-q8_0}
 MOE_VARIANT=${MOE_VARIANT:-turbo4}
@@ -40,6 +46,12 @@ MOE_GPULAYERS=${MOE_GPULAYERS:-99}
 MOE_PER_SLOT_CONTEXT=${MOE_PER_SLOT_CONTEXT:-262144}
 MOE_SLOTS=${MOE_SLOTS:-8}
 MOE_CONTEXT=$((MOE_PER_SLOT_CONTEXT * MOE_SLOTS))
+
+# MoE-specific KV cache tuning
+MOE_CACHE_RAM=${MOE_CACHE_RAM:-32768}        # 32GB prompt cache RAM
+MOE_CTX_CHECKPOINTS=${MOE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
+MOE_CHECKPOINT_EVERY_NT=${MOE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
+MOE_CACHE_REUSE=${MOE_CACHE_REUSE:-128}       # Min chunk size for KV cache reuse
 
 log() {
   echo "[$(date '+%H:%M:%S')] $*"
@@ -79,14 +91,20 @@ mkdir -p "$MOE_PID_DIR"
 
 # Start dense server (port 30080) if enabled
 if [ "$DENSE_ENABLED" = "1" ]; then
-  log "Starting dense server on port $DENSE_PORT (per-slot context=$DENSE_PER_SLOT_CONTEXT, slots=$DENSE_SLOTS, total context=$DENSE_CONTEXT)..."
+  log "Starting dense server on port $DENSE_PORT (per-slot context=$DENSE_PER_SLOT_CONTEXT, slots=$DENSE_SLOTS, total context=$DENSE_CONTEXT, cache_ram=$DENSE_CACHE_RAM, checkpoints=$DENSE_CTX_CHECKPOINTS, checkpoint_every=$DENSE_CHECKPOINT_EVERY_NT, cache_reuse=$DENSE_CACHE_REUSE)..."
   nohup $LLAMA_SERVER \
     --model "$DENSE_MODEL" \
     --port "$DENSE_PORT" \
     -ctk "$DENSE_THREADS" -ctv "$DENSE_VARIANT" \
     --flash-attn on \
     --jinja \
-    --gpu-layers $DENSE_GPULAYERS -c $DENSE_CONTEXT -np $DENSE_SLOTS \
+    --gpu-layers $DENSE_GPULAYERS \
+    -c $DENSE_CONTEXT -np $DENSE_SLOTS \
+    --kv-unified \
+    --cache-ram $DENSE_CACHE_RAM \
+    --ctx-checkpoints $DENSE_CTX_CHECKPOINTS \
+    --checkpoint-every-n-tokens $DENSE_CHECKPOINT_EVERY_NT \
+    --cache-reuse $DENSE_CACHE_REUSE \
     --host 127.0.0.1 \
     > >(sed 's/^/[DENSE] /' >> "$HOME/.localllm/dense.log") 2>&1 &
   echo $! > "$DENSE_PID_DIR/dense.pid"
@@ -95,14 +113,20 @@ fi
 
 # Start moe server (port 30081) if enabled
 if [ "$MOE_ENABLED" = "1" ]; then
-  log "Starting moe server on port $MOE_PORT (per-slot context=$MOE_PER_SLOT_CONTEXT, slots=$MOE_SLOTS, total context=$MOE_CONTEXT)..."
+  log "Starting moe server on port $MOE_PORT (per-slot context=$MOE_PER_SLOT_CONTEXT, slots=$MOE_SLOTS, total context=$MOE_CONTEXT, cache_ram=$MOE_CACHE_RAM, checkpoints=$MOE_CTX_CHECKPOINTS, checkpoint_every=$MOE_CHECKPOINT_EVERY_NT, cache_reuse=$MOE_CACHE_REUSE)..."
   nohup $LLAMA_SERVER \
     --model "$MOE_MODEL" \
     --port "$MOE_PORT" \
     -ctk "$MOE_THREADS" -ctv "$MOE_VARIANT" \
     --jinja \
     --flash-attn on \
-    --gpu-layers $MOE_GPULAYERS -c $MOE_CONTEXT -np $MOE_SLOTS \
+    --gpu-layers $MOE_GPULAYERS \
+    -c $MOE_CONTEXT -np $MOE_SLOTS \
+    --kv-unified \
+    --cache-ram $MOE_CACHE_RAM \
+    --ctx-checkpoints $MOE_CTX_CHECKPOINTS \
+    --checkpoint-every-n-tokens $MOE_CHECKPOINT_EVERY_NT \
+    --cache-reuse $MOE_CACHE_REUSE \
     --host 127.0.0.1 \
     > >(sed 's/^/[MOE] /' >> "$HOME/.localllm/moe.log") 2>&1 &
   echo $! > "$MOE_PID_DIR/moe.pid"
