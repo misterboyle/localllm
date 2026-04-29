@@ -28,19 +28,16 @@ Validate the **KV buffer page faulting effect** documented in KV-CACHE-ANALYSIS.
 
 ---
 
-## Current State (Post Follow-up 2)
+## Current State (Multi-Slot Active)
 
-| Metric | Value |
-|--------|-------|
-| Slot 0 tokens | **~102K (39% of 262K)** |
-| Slot 1 tokens | 1,902 (system prompt only, idle) |
-| Server RSS | ~42.4 GB (baseline, single-slot) |
-| Server MEM% | ~33% |
-| Prompt cache | 1 entry, 496 MiB |
-| Checkpoints (slot 0) | 21/32 (FIFO ring, per-turn bug) |
-| Checkpoints (slot 1) | 2/32 |
+| Metric | Slot 0 (A: logrotate-lite) | Slot 1 (B: data pipeline) |
+|--------|---------------------------|--------------------------|
+| Tokens | 143,220 (55%) | 23,444 (9%) |
+| Checkpoints | 32/32 (full) | 32/32 (full) |
+| Server RSS | 53.7 GB (both active) | |
+| Prompt cache | 500 MiB (1 entry, system prompt) | |
 
-**Observation:** 102K tokens but still only 21 checkpoints (not 12+ expected at 8K spacing). Per-turn checkpoint bug confirmed — checkpoints accumulate per turn, not per 8K tokens.
+**Memory jump:** +10.6 GB from single-slot baseline (43.1 → 53.7 GB). Proportional to the 2-slot buffer (524K cells) vs 8-slot buffer (2M cells) observed in prior tests.
 
 ---
 
@@ -101,15 +98,16 @@ Checkpoints account for **70-75% of prompt cache entry size** for large conversa
 
 ---
 
-## Expected vs Actual (To Fill In)
+## Expected vs Actual
 
 | Phase | Expected RSS | Actual RSS | Delta | Notes |
 |-------|-------------|------------|-------|-------|
-| Baseline (1 slot, 0 tokens) | ~40 GB | 42.4 GB | +2.4 | Slot 0 at 47K, slightly above baseline |
-| Slot 0: 50K tokens | ~42 GB | TBD | — | |
-| Slot 0: 100K tokens | ~44 GB | TBD | — | |
-| Slot 1: 50K tokens (2 active) | ~55-60 GB | TBD | +13-18 | **The key measurement** |
-| Both at 100K | ~46 GB | TBD | — | |
+| Baseline (1 slot, 130K tokens) | ~43 GB | 43.1 GB | ✓ | Single slot, flat |
+| Slot 1 activated (14K tokens) | ~55-60 GB | 49.1 GB | +6.0 GB | Initial activation, B just started |
+| Both growing (143K + 23K) | ~55-60 GB | **53.7 GB** | +10.6 GB | Both at 32/32 checkpoints |
+| **Key finding** | | | | Jump is +10.6 GB, not +43 GB (8-slot data) |
+
+**Smaller jump than 8-slot test:** 8-slot config had 2M total cells (52 GB mmap), 2-slot has 524K cells (13.6 GB mmap). With 2 slots at ~166K combined tokens, ~10 GB faulted in. Proportional to buffer size.
 
 ---
 
