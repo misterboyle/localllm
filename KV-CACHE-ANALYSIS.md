@@ -513,6 +513,26 @@ All 8 slots still fit but with **~10-13 GB headroom** — tighter than our initi
 
 3. **`the target context does not support partial sequence removal`**: Expected for hybrid models. This is why checkpoints are needed.
 
+### Checkpoint Hit Rate (Dense Server, 1 Session, 3,089 log lines)
+
+| Slot | Created | Restored (hits) | Erased (misses) | Hit Rate |
+|------|---------|-----------------|-----------------|----------|
+| 7 | 95 | 16 | 68 | 17% |
+| 3 | 27 | 10 | 23 | 27% |
+| 1 | 43 | 4 | 20 | 9% |
+| 0 | 22 | 6 | 14 | 22% |
+| 2 | 2 | 0 | 0 | — |
+| 4 | 1 | 2 | 0 | — |
+| 5 | 1 | 0 | 0 | — |
+| **Total** | **188** | **38 (20%)** | **125** | **20%** |
+
+**Key findings:**
+- **Zero full prompt reprocessing events** — checkpoints successfully prevented any full reprocessing
+- 80% of checkpoints were created then erased (cross-conversation invalidation)
+- 20% hit rate is meaningful: each hit avoided reprocessing 8K-80K+ tokens
+- Erasure is not wasted work — it's the expected cleanup when a conversation rolls back to an earlier checkpoint
+- Prompt cache entries scale at ~27 bytes/token (140 tokens = 153 MiB, 102K tokens = 2,694 MiB)
+
 ---
 
 *Last updated: 2026-04-29*
