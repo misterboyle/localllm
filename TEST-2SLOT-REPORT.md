@@ -32,12 +32,15 @@ Validate the **KV buffer page faulting effect** documented in KV-CACHE-ANALYSIS.
 
 | Metric | Slot 0 (A: logrotate-lite) | Slot 1 (B: data pipeline) |
 |--------|---------------------------|--------------------------|
-| Tokens | 143,220 (55%) | 23,444 (9%) |
-| Checkpoints | 32/32 (full) | 32/32 (full) |
-| Server RSS | 53.7 GB (both active) | |
-| Prompt cache | 500 MiB (1 entry, system prompt) | |
+| Tokens | 156,216 (59%) | 70,278 (27%) |
+| Checkpoints | 22/32 | 32/32 (full) |
+| Server RSS | 63.1 GB (both idle, cache loaded) | |
+| Prompt cache | 3 entries, 14 GB (cold conversations) | |
 
-**Memory jump:** +10.6 GB from single-slot baseline (43.1 → 53.7 GB). Proportional to the 2-slot buffer (524K cells) vs 8-slot buffer (2M cells) observed in prior tests.
+**Memory jump:** +20 GB from single-slot baseline (43.1 → 63.1 GB). Breakdown:
+- KV faulted: +5.9 GB (226K active tokens × 26B)
+- Prompt cache: +13.5 GB (3 cold conversations, checkpoint serialization dominates)
+- Overhead: ~16 GB (CUDA, macOS page alignment)
 
 ---
 
