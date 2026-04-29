@@ -497,6 +497,79 @@ When a new request arrives and an idle slot holds cached data:
 
 All 8 slots still fit but with **~10-13 GB headroom** — tighter than our initial estimate. The prompt cache (`--cache-ram 65536`) is a soft cap and doesn't pre-allocate, so it doesn't add to the baseline.
 
+### Checkpoint ↔ Prompt Cache Relationship (Updated 2026-04-29)
+
+**Key finding from live dense testing (dense.log.bkup2):** Checkpoints are **not separate from the prompt cache**. When a slot is saved to the prompt cache, its checkpoints are serialized along with the KV data and restored when the slot is reconstituted.
+
+From dense.log.bkup2, three large saves observed:
+
+| Slot | Tokens | Cache Size | Checkpoints | Checkpoint Cost | KV Cost |
+|------|--------|------------|-------------|-----------------|---------|
+| 7 | 89,907 | 2,390 MiB | 22 | 5,682 MiB | ~2,390 MiB |
+| 3 | 102,112 | 2,694 MiB | 26 | 6,584 MiB | ~2,694 MiB |
+| 0 | 136,521 | 3,551 MiB | 32 | 8,339 MiB | ~3,551 MiB |
+
+The checkpoint cost is ~149 MiB × checkpoint_count. This means checkpoints account for **70-75% of prompt cache entry size** for large conversations. When a slot is saved:
+
+```
+slot_save_an: id 0 | task -1 | saving idle slot to prompt cache
+prompt_save:  - saving prompt with length 136521, total state size = 3551.923 MiB
+prompt_clear: id 0 | task -1 | clearing prompt with 136521 tokens
+```
+
+The `prompt_clear` drops the slot's KV buffer pages from "Mem" to inactive. The KV data + all checkpoints live in the prompt cache. When the conversation returns and LCP matches it, the prompt cache restores everything into whatever slot is available. **The slot number is irrelevant.**
+
+### The `--cache-idle-slots` Mechanism (Corrected)
+
+When a new request arrives and an idle slot holds cached data:
+1. Slot is **saved** to prompt cache (KV data + all checkpoints serialized)
+2. Slot's KV cache is **cleared** (pages drop from "Mem" to inactive, stay in RES)
+3. New request restores from prompt cache into an available slot
+4. **Result:** No reprocessing, conversation migrates seamlessly between slot numbers
+
+**Prompt cache restore has no separate log line.** It's implicit in the `selected slot by LCP similarity` → `n_past = X` sequence. When `n_past` jumps from 0 to a large number, the restore just happened.
+
+### Slot vs Cache: What Does `--slots` Actually Mean?
+
+**Slots = parallel decoding channels, NOT "max conversations in memory."**
+
+Each slot is an active inference thread — it holds the sampler state, the decode loop, the generation parameters. Only one conversation per slot can be generating tokens at a time. If you have 2 slots, at most 2 conversations can be actively responding simultaneously.
+
+**Prompt cache = cold storage for idle conversations.** When a slot goes idle, its conversation is saved to the prompt cache and the slot is freed. The conversation persists in the cache, ready to resume when it gets a new prompt.
+
+| Concept | Controlled by | Meaning |
+|---------|--------------|---------|
+| **Max active decoders** | `--slots` | How many conversations can generate tokens simultaneously |
+| **Max idle conversations** | `--cache-ram` | How many conversations can be preserved in prompt cache |
+| **Max tokens in flight** | `-c` (total context) | KV buffer capacity across all active slots |
+
+**kv-unified vs separate buffers** doesn't change slot count. It changes whether idle slots waste KV buffer space:
+- **Separate buffers:** Each slot reserves its full per-slot-context buffer regardless of usage. Slot 0 at 50K tokens still owns 262K cells. Memory = `slots × per-slot-context × 26 bytes`.
+- **Unified buffer:** Slots share one pool. Memory scales with actual token count, not reservations.
+
+**Practical implication:** For interactive CLI use where conversations mostly take turns (one responds, others wait), 2 slots handles many sessions. The prompt cache holds the idle ones. 8 slots is only needed for truly parallel generation (multiple users getting responses simultaneously).
+
+### LCP Matching vs Slot Pinning
+
+**LCP matching** is the default slot assignment strategy. It picks the slot whose cached prompt most closely matches the incoming request. This enables conversation migration:
+
+```
+Conversation A → slot 0 (first assignment)
+Conversation B → slot 1
+All slots busy → new conversation C → LCP picks slot 0, bumps A
+A saves to prompt cache (3.5GB) → slot 0 cleared → A migrates later
+```
+
+This causes: checkpoint erasure storms, prompt cache thrashing, unpredictable slot assignment.
+
+**Slot pinning** would assign each session to a fixed slot via `slot_id` in the `/completion` API. With pinning:
+- No prompt cache needed (conversations never migrate)
+- No cross-conversation checkpoint invalidation
+- Memory usage is deterministic per slot
+- Tradeoff: wasted slot capacity if a conversation dies or is abandoned
+
+**For our test:** We're not pinning — we want to measure the KV buffer page faulting behavior with LCP-managed slots. Pinning would simplify things but wouldn't stress-test the multi-slot memory dynamics we're trying to characterize.
+
 ### --cache-ram Behavior
 
 `--cache-ram` is a **soft limit**, not a pre-allocation. It caps how much memory the prompt cache can consume, but doesn't reserve that memory upfront. Startup memory is unaffected by the `--cache-ram` value.
@@ -512,6 +585,32 @@ All 8 slots still fit but with **~10-13 GB headroom** — tighter than our initi
 2. **`cache_reuse is not supported by this context, it will be disabled`**: The model uses MROPE (multi-dimensional RoPE: `[11, 11, 10, 0]`), which requires per-layer position encoding. KV cache shifting (`--cache-reuse`) assumes a single global rotation dimension and cannot work with MROPE. LCP similarity matching handles cache reuse instead.
 
 3. **`the target context does not support partial sequence removal`**: Expected for hybrid models. This is why checkpoints are needed.
+
+## 14. Per-Turn Checkpoint Creation Bug (Discovered 2026-04-29)
+
+**The `--checkpoint-every-n-tokens 8192` flag doesn't work as intended with high LCP reuse.**
+
+From the current dense.log (2 slots, 64GB cache-ram):
+
+| Turn | Task | LCP f_keep | Tokens processed (delta) | Checkpoint created at |
+|------|------|-----------|------------------------|----------------------|
+| 3 | task 3 | n/a (no cache) | 10,854 full | 8191 ✓ (correct 8K spacing) |
+| 119 | task 119 | 1.000 | ~1,600 | 11,987 |
+| 973 | task 973 | 1.000 | ~1,600 | 12,000, 12,512 |
+| 1296 | task 1296 | 1.000 | ~400 | 12,835 |
+| 1388 | task 1388 | 1.000 | ~170 | 12,943 |
+| 3945 | task 3945 | ~0.95 | ~1,500 | 14,843, 15,355 |
+| ... | ... | ~0.99 | ~500 | 1 per turn |
+
+**Root cause:** The `--checkpoint-every-n-tokens` flag only controls spacing **within a single prefill**. But llama.cpp creates a checkpoint **unconditionally at the end of every prefill** (after `prompt processing done`). When LCP similarity is 0.99+, each turn only processes 500-2K new tokens (the delta), yet still gets an end-of-prefill checkpoint.
+
+**Consequence:** The 32-checkpoint FIFO ring fills in ~32 turns, regardless of total token count. At 47K tokens we have 21 checkpoints — not because we've processed 21 × 8K = 168K tokens, but because we've had ~21 conversation turns.
+
+**Impact on memory:** Each checkpoint is 149 MiB. At 32 checkpoints, that's 4.7 GB per slot — the same cost as before. But the checkpoints are spread across only ~50K tokens of actual processing (not 256K), so the checkpoint hit rate is lower and checkpoint density is higher in the earlier portion of the conversation.
+
+**Workaround:** Set `--ctx-checkpoints 0` if LCP matching is consistently high (our primary use case). Or reduce to `--ctx-checkpoints 4` to limit the FIFO ring to just a few intra-prompt resume points.
+
+**This does NOT affect the MoE model's 7 reprocessing events** — those were from cross-conversation checkpoint invalidation, which happens regardless of spacing. The per-turn bug primarily affects memory efficiency, not correctness.
 
 ### Checkpoint Hit Rate (Dense Server, 1 Session, 3,089 log lines)
 
