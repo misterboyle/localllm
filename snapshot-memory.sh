@@ -9,7 +9,7 @@ echo "" | tee -a "$TEST_LOG"
 echo "=== MEMORY SNAPSHOT: $PHASE ($(date '+%H:%M:%S')) ===" | tee -a "$TEST_LOG"
 
 # Process memory
-ps aux | grep llama-server | grep -v grep | awk '{printf "Process: MEM%%: %.1f, RSS: %.1f GB, VSZ: %.1f GB\n", $4, $6/1024, $5/1024}' | tee -a "$TEST_LOG"
+ps aux | grep llama-server | grep -v grep | awk '{printf "Process: MEM%%: %.1f, RSS: %.1f GB, VSZ: %.1f GB\n", $4, $6/1048576, $5/1048576}' | tee -a "$TEST_LOG"
 
 # System memory (from Activity Monitor via vm_stat)
 vm_stat | head -1 | tee -a "$TEST_LOG"
@@ -27,8 +27,11 @@ for s in slots:
 # Prompt cache state
 grep "cache state:" ~/.localllm/dense.log | tail -1 | tee -a "$TEST_LOG"
 
-# Checkpoint summary for this phase
+# Checkpoint summary — current ring size per slot (from latest checkpoint creation)
 echo "Checkpoints:" | tee -a "$TEST_LOG"
-grep "created context checkpoint" ~/.localllm/dense.log | grep -o "id  [0-9]" | sort | uniq -c | while read count slot_id; do
-  echo "  $slot_id: $count checkpoints" | tee -a "$TEST_LOG"
+for slot_id in 0 1 2 3 4 5 6 7; do
+  latest=$(grep "id  ${slot_id}.*created context checkpoint" ~/.localllm/dense.log | tail -1 | sed -E 's/.*checkpoint ([0-9]+) of ([0-9]+).*/\1\/\2/')
+  if [[ -n "$latest" ]]; then
+    echo "  Slot $slot_id: $latest" | tee -a "$TEST_LOG"
+  fi
 done
