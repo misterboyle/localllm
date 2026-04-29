@@ -106,7 +106,7 @@ if [ "$DENSE_ENABLED" = "1" ]; then
     --checkpoint-every-n-tokens $DENSE_CHECKPOINT_EVERY_NT \
     --cache-reuse $DENSE_CACHE_REUSE \
     --host 127.0.0.1 \
-    > >(sed 's/^/[DENSE] /' >> "$HOME/.localllm/dense.log") 2>&1 &
+    > >(while IFS= read -r line; do echo "[$(date '+%H:%M:%S')] [DENSE] $line"; done >> "$HOME/.localllm/dense.log") 2>&1 &
   echo $! > "$DENSE_PID_DIR/dense.pid"
   log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
 fi
@@ -128,7 +128,7 @@ if [ "$MOE_ENABLED" = "1" ]; then
     --checkpoint-every-n-tokens $MOE_CHECKPOINT_EVERY_NT \
     --cache-reuse $MOE_CACHE_REUSE \
     --host 127.0.0.1 \
-    > >(sed 's/^/[MOE] /' >> "$HOME/.localllm/moe.log") 2>&1 &
+    > >(while IFS= read -r line; do echo "[$(date '+%H:%M:%S')] [MOE] $line"; done >> "$HOME/.localllm/moe.log") 2>&1 &
   echo $! > "$MOE_PID_DIR/moe.pid"
   log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
 fi
