@@ -433,37 +433,69 @@ If you want to test this, the same optimized config (`--kv-unified --ctx-checkpo
 
 From a running dense server with 1 active slot at ~79K tokens:
 
-| Metric | Observed |
+| Metric | Observed | Meaning |
+|---|---|---|
+| Activity Monitor "Memory" | **64.1 GB** | Actively in-use pages (the reliable number) |
+| htop RES (resident set) | 87.3 GB | All pages ever touched, including cold/inactive |
+| htop VIRT | 513 GB | mmap reservations, not actual usage |
+
+**Activity Monitor "Mem" is the number that matters** — it reflects actual memory pressure on the system. RES is inflated by cold pages that the OS can reclaim.
+
+### How Memory Changes with Active Slots (Updated)
+
+| Observation | Explanation |
 |---|---|
-| Activity Monitor "Memory" | 64.1 GB |
-| htop RES (resident set) | 81.4 GB (includes all touched pages) |
-| htop VIRT | 513 GB (mmap reservations, not actual usage) |
+| 64.1 GB flat as checkpoints grew (13→23) | Checkpoints reference existing KV data, not new allocations |
+| 64.1 GB flat as idle slots cached to prompt | `--cache-idle-slots` **clears** the slot's KV cache, dropping pages from "Mem" to inactive |
+| RES grows but "Mem" doesn't | Cold pages stay in RES but fall out of "Mem" — expected macOS unified memory behavior |
+| **107 GB when 2nd opencode activated** | **KV buffer pages faulted in across multiple slot regions** |
 
-**The 64.1 GB (Activity Monitor) is the reliable number** — actual memory pressure on the system.
+### The KV Buffer Page Faulting Effect
 
-### Fixed vs Variable Costs
+**Critical correction:** The unified KV buffer (52 GB) is `mmap`'d but pages are only faulted in when written. With 1 slot at ~80K tokens, only ~2 GB of the 52 GB buffer was active in "Mem". When multiple slots activate and write to different regions, those pages get faulted in, dramatically increasing "Mem".
+
+| Scenario | KV Buffer in "Mem" | Total "Mem" |
+|---|---|---|
+| 1 slot (~80K tokens) | ~2 GB | 64.1 GB |
+| 2+ slots active (briefly touched 4 slots) | ~40+ GB | **107 GB** |
+| After 1 slot goes idle + OS reclaim | ~25 GB | **100 GB** (dropped from 121G) |
+| 8 slots at full context (theoretical max) | ~52 GB (all pages faulted) | ~115-118 GB |
+
+This means the KV buffer **is** a per-slot cost after all, through page faulting rather than explicit allocation. **BUT pages are reclaimable** — when slots go idle and are cleared by `--cache-idle-slots`, the OS can reclaim those pages. We observed memory drop from 121G → 107G after one slot went idle. The 52 GB is the peak ceiling when all 8 slots are simultaneously active, not a cumulative cost.
+
+### The `--cache-idle-slots` Mechanism
+
+When a new request arrives and an idle slot holds cached data:
+1. Slot is **saved** to prompt cache (e.g., 2.7 GB for 102K tokens)
+2. Slot's KV cache is **cleared** (pages drop from "Mem" to inactive, stay in RES)
+3. New request restores from prompt cache into an available slot
+4. **Result:** No reprocessing, conversation migrates seamlessly between slot numbers
+
+**Key insight:** The slot number is just a container. The real state lives in the **prompt cache** (`--cache-ram`). Conversations can migrate between slots without reprocessing as long as the prompt cache retains them.
+
+### Fixed vs Variable Costs (Revised)
 
 | Component | Cost | Type |
 |---|---|---|
 | Model weights (Q6_K) | ~24 GB | Fixed |
-| Unified KV buffer (2M cells, 52 GB allocated) | ~52 GB pre-allocated | Fixed (shared, not per-slot) |
+| Unified KV buffer (2M cells, 52 GB mmap'd) | 2-52 GB | **Variable** (page faulting) |
 | Compute buffers | ~10 GB | Fixed |
 | Recurrent state buffer | 1.2 GB | Fixed |
-| Checkpoints (per slot, ~32 × 149 MiB) | ~4.7 GB/slot | **Variable** |
-| Prompt cache (saved idle slots) | ~4-5 GB/slot | **Variable** |
+| Checkpoints (per slot, ~32 × 149 MiB) | ~4.7 GB/slot | **Variable (inactive)** |
+| Prompt cache (saved idle slots) | ~2-8 GB/slot | **Variable (inactive)** |
 
-**Key finding:** The unified KV buffer is the dominant cost (~52 GB) but it's pre-allocated once and shared across all slots. It does NOT grow per slot. This was verified by observing flat 64.1 GB memory as checkpoint count grew from 13 to 23 in a single slot.
+**Revised understanding:** The KV buffer is the dominant variable cost. With 1 slot, only ~2 GB is active. With 8 slots at full context, all ~52 GB gets faulted in. Prompt cache and checkpoint memory are secondary and mostly inactive.
 
-### 8-Slot Budget
+### 8-Slot Budget (Revised)
 
-| Component | Memory |
-|---|---|
-| Base (1 active slot, ~79K tokens) | 64.1 GB |
-| 7 additional hot slots at 90% context (checkpoints + prompt cache) | ~29-35 GB |
-| **Total 8 slots at 90%** | **~93-99 GB** |
-| Headroom before 128 GB | **~29-35 GB** |
+| Scenario | "Mem" (Activity Monitor) | RES (htop) |
+|---|---|---|
+| 1 active slot (baseline) | 64.1 GB | 87.3 GB |
+| 2+ slots active (observed) | **107 GB** | ~120 GB |
+| 8 slots at full context (theoretical) | **~115-118 GB** | ~130 GB |
+| **System limit** | **128 GB** | — |
 
-All 8 slots fit comfortably with meaningful headroom.
+All 8 slots still fit but with **~10-13 GB headroom** — tighter than our initial estimate. The prompt cache (`--cache-ram 65536`) is a soft cap and doesn't pre-allocate, so it doesn't add to the baseline.
 
 ### --cache-ram Behavior
 
