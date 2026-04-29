@@ -63,7 +63,14 @@ These two tiers don't run simultaneously. The reasoner thinks, then spawns the w
 - Prompt cache: ~5 GB (8 conversations)
 - Total: ~60 GB (comfortable in 128 GB)
 
-**Tradeoff:** No model specialization. Worker tasks get the same reasoning power as main agent (which is fine — the 27B is strong at both). But worker decode will be slower than the MoE equivalent. Simpler config (one process, one port). Lower memory cost (~60 GB vs ~85 GB).
+**Tradeoff:** No model specialization. Worker tasks get the same reasoning power as main agent (which is fine — the 27B is strong at both). Simpler config (one process, one port). Lower memory cost (~60 GB vs ~85 GB).
+
+**SHARED GPU COMPUTE (both architectures):** Both architectures share the same GPU compute and memory bandwidth — two processes don't magically double the resources. The observed decode slowdown (9.89 tokens/sec for Slot 1 vs 14.5 tokens/sec solo) happens in **both** architectures because the GPU is still processing 27B params for the reasoner while also processing whatever the worker needs.
+
+**The real advantage of Architecture A is model specialization, not isolation:**
+- MoE's 3B active params decode faster than 27B's 27B active params (less compute per token)
+- If the worker task only needs MoE's capability, it finishes faster because it's processing through a smaller model
+- Single process (Architecture B) may actually batch decode more efficiently (one kernel launch for both slots vs two kernel launches for two processes)
 
 ---
 
@@ -119,6 +126,27 @@ DENSE_SLOTS=2 DENSE_PER_SLOT_CONTEXT=262144 ./start-server.sh
    - Each process loads its own model weights (24 GB each)
    - 2 processes = 48 GB in weights vs 24 GB for single process
    - But with unified memory, duplicated weights may page-share at the OS level
+
+---
+
+## Live Findings (2026-04-29, 2-slot test)
+
+**Memory scaling:** 2-slot config with 524K total context
+- Single active slot: **43.1 GB** RSS
+- Both slots active: **49.1 GB** RSS (+6 GB)
+- Smaller jump than 8-slot test (which showed +43 GB) because total buffer is smaller (524K vs 2M cells)
+
+**Decode speed contention (Architecture B):**
+- Slot 0 (139K context): prompt eval 386 tokens/sec, decode 14.5 tokens/sec
+- Slot 1 (14K context): decode **9.89 tokens/sec** — 32% slower due to shared GPU compute
+
+**Slot migration behavior:**
+- Conversations migrate between slots via LCP matching
+- Migration saves full KV state to prompt cache (3.5 GB for 130K tokens)
+- Prompt cache evicts when full (observed eviction after migration cycle)
+- No migration = no prompt cache overhead (current state: 738 MiB cache)
+
+**Implication for Architecture A:** Separate processes eliminate both the decode contention and the migration overhead. Each model owns its own GPU compute and slots.
 
 ---
 
