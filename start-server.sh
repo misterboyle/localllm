@@ -34,7 +34,7 @@ DENSE_SLOTS=${DENSE_SLOTS:-2}
 DENSE_CONTEXT=$((DENSE_PER_SLOT_CONTEXT * DENSE_SLOTS))
 
 # KV cache tuning (see KV-CACHE-ANALYSIS.md for details)
-DENSE_CACHE_RAM=${DENSE_CACHE_RAM:-32768}       # 32GB prompt cache RAM
+DENSE_CACHE_RAM=${DENSE_CACHE_RAM:-65536}       # 64GB prompt cache RAM
 DENSE_CTX_CHECKPOINTS=${DENSE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
 DENSE_CHECKPOINT_EVERY_NT=${DENSE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
 DENSE_CACHE_REUSE=${DENSE_CACHE_REUSE:-128}  # Min chunk size for KV cache reuse
@@ -48,7 +48,7 @@ MOE_SLOTS=${MOE_SLOTS:-8}
 MOE_CONTEXT=$((MOE_PER_SLOT_CONTEXT * MOE_SLOTS))
 
 # MoE-specific KV cache tuning
-MOE_CACHE_RAM=${MOE_CACHE_RAM:-32768}        # 32GB prompt cache RAM
+MOE_CACHE_RAM=${MOE_CACHE_RAM:-65536}        # 64GB prompt cache RAM
 MOE_CTX_CHECKPOINTS=${MOE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
 MOE_CHECKPOINT_EVERY_NT=${MOE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
 MOE_CACHE_REUSE=${MOE_CACHE_REUSE:-128}       # Min chunk size for KV cache reuse

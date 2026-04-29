@@ -262,7 +262,7 @@ MOE_CONTEXT=$((MOE_PER_SLOT_CONTEXT * MOE_SLOTS))
 
 # Optimized llama-server launch flags:
 --kv-unified                    # Single shared KV buffer
---cache-ram 32768               # 32GB prompt cache RAM
+--cache-ram 65536               # 64GB prompt cache RAM
 --ctx-checkpoints 32            # Max checkpoints per slot (upstream default)
 --checkpoint-every-n-tokens 8192  # Checkpoint every 8192 tokens during prefill
 --cache-reuse 128               # Reuse cached chunks >= 128 tokens
@@ -378,7 +378,7 @@ This is fundamentally different from standard Transformer models where KV cache 
 | Flag | Default | Optimized | Reason |
 |---|---|---|---|
 | `--kv-unified` | auto | **true** | Shared KV buffer |
-| `--cache-ram` | 8192 | **32768** | 4x prompt cache capacity |
+| `--cache-ram` | 8192 | **65536** | 8x prompt cache capacity (8 slots @ 90%) |
 | `--ctx-checkpoints` | 32 | **32** | Keep intra-conversation checkpoints |
 | `--checkpoint-every-n-tokens` | 8192 | **8192** | Controlled checkpoint spacing (PR #20087) |
 | `--cache-reuse` | 0 | **128** | More KV shifting hits |
@@ -423,10 +423,66 @@ The 27B dense model would face the same full reprocessing events, but:
 
 **But it's untested.** We don't have log data from the 27B dense server to confirm whether it avoids the checkpoint issue. It won't — same hybrid architecture. It might just be *less painful* due to faster eval and lower memory pressure.
 
-If you want to test this, the same optimized config (`--kv-unified --ctx-checkpoints 32 --checkpoint-every-n-tokens 8192 --cache-ram 32768`) should work for both. Watch for the same "forcing full prompt re-processing" message in the dense log.
+If you want to test this, the same optimized config (`--kv-unified --ctx-checkpoints 32 --checkpoint-every-n-tokens 8192 --cache-ram 65536`) should work for both. Watch for the same "forcing full prompt re-processing" message in the dense log.
+
+---
+
+## 13. Memory Budget Analysis (M5 Max 128GB, Dense 27B, 8 slots)
+
+### Ground-Truth Measurements
+
+From a running dense server with 1 active slot at ~79K tokens:
+
+| Metric | Observed |
+|---|---|
+| Activity Monitor "Memory" | 64.1 GB |
+| htop RES (resident set) | 81.4 GB (includes all touched pages) |
+| htop VIRT | 513 GB (mmap reservations, not actual usage) |
+
+**The 64.1 GB (Activity Monitor) is the reliable number** — actual memory pressure on the system.
+
+### Fixed vs Variable Costs
+
+| Component | Cost | Type |
+|---|---|---|
+| Model weights (Q6_K) | ~24 GB | Fixed |
+| Unified KV buffer (2M cells, 52 GB allocated) | ~52 GB pre-allocated | Fixed (shared, not per-slot) |
+| Compute buffers | ~10 GB | Fixed |
+| Recurrent state buffer | 1.2 GB | Fixed |
+| Checkpoints (per slot, ~32 × 149 MiB) | ~4.7 GB/slot | **Variable** |
+| Prompt cache (saved idle slots) | ~4-5 GB/slot | **Variable** |
+
+**Key finding:** The unified KV buffer is the dominant cost (~52 GB) but it's pre-allocated once and shared across all slots. It does NOT grow per slot. This was verified by observing flat 64.1 GB memory as checkpoint count grew from 13 to 23 in a single slot.
+
+### 8-Slot Budget
+
+| Component | Memory |
+|---|---|
+| Base (1 active slot, ~79K tokens) | 64.1 GB |
+| 7 additional hot slots at 90% context (checkpoints + prompt cache) | ~29-35 GB |
+| **Total 8 slots at 90%** | **~93-99 GB** |
+| Headroom before 128 GB | **~29-35 GB** |
+
+All 8 slots fit comfortably with meaningful headroom.
+
+### --cache-ram Behavior
+
+`--cache-ram` is a **soft limit**, not a pre-allocation. It caps how much memory the prompt cache can consume, but doesn't reserve that memory upfront. Startup memory is unaffected by the `--cache-ram` value.
+
+- `--cache-ram 32768` (32 GB): Sufficient for ~6-7 hot slots' checkpoint states
+- `--cache-ram 65536` (64 GB): Sufficient for all 8 hot slots without prompt cache eviction
+- Default: **65536** to support the 8-slot goal
+
+### Warnings Observed (Non-Actionable)
+
+1. **`n_ctx_seq (2097152) > n_ctx_train (262144)`**: Cosmetic with unified KV. The aggregate buffer (8 × 262K) triggers the check, but individual conversations stay within 262K and RoPE scaling handles the rest.
+
+2. **`cache_reuse is not supported by this context, it will be disabled`**: The model uses MROPE (multi-dimensional RoPE: `[11, 11, 10, 0]`), which requires per-layer position encoding. KV cache shifting (`--cache-reuse`) assumes a single global rotation dimension and cannot work with MROPE. LCP similarity matching handles cache reuse instead.
+
+3. **`the target context does not support partial sequence removal`**: Expected for hybrid models. This is why checkpoints are needed.
 
 ---
 
 *Last updated: 2026-04-29*
 *Based on llama.cpp source at: ~/llama.cpp-turbo/*
-*Validated against: moe.log (12,932 lines, 7 full reprocessing events documented)*
+*Validated against: moe.log (12,932 lines, 7 full reprocessing events) and dense.log (live testing)*

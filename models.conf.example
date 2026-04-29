@@ -35,7 +35,7 @@
 # DENSE_PER_SLOT_CONTEXT=262144  # 262K per slot
 # DENSE_SLOTS=2
 # KV cache tuning (see KV-CACHE-ANALYSIS.md for details):
-# DENSE_CACHE_RAM=32768              # Prompt cache RAM limit in MiB (default: 32768 = 32GB)
+# DENSE_CACHE_RAM=65536              # Prompt cache RAM limit in MiB (default: 65536 = 64GB)
 # DENSE_CTX_CHECKPOINTS=32           # Max checkpoints per slot (default: 32)
 # DENSE_CHECKPOINT_EVERY_NT=8192     # Create checkpoint every N tokens during prefill (default: 8192)
 # DENSE_CACHE_REUSE=128              # Min token chunk size for KV cache reuse (default: 128)
@@ -47,7 +47,7 @@
 # MOE_PER_SLOT_CONTEXT=262144  # 262K per slot
 # MOE_SLOTS=8
 # KV cache tuning (see KV-CACHE-ANALYSIS.md for details):
-# MOE_CACHE_RAM=32768              # Prompt cache RAM limit in MiB (default: 32768 = 32GB)
+# MOE_CACHE_RAM=65536              # Prompt cache RAM limit in MiB (default: 65536 = 64GB)
 # MOE_CTX_CHECKPOINTS=32           # Max checkpoints per slot (default: 32)
 # MOE_CHECKPOINT_EVERY_NT=8192     # Create checkpoint every N tokens during prefill (default: 8192)
 # MOE_CACHE_REUSE=128              # Min token chunk size for KV cache reuse (default: 128)
