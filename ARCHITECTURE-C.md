@@ -1,5 +1,9 @@
 # Architecture C: MoE-Only, Pinned Slots, No Cache
 
+> **Historical note:** This architecture was designed for llama.cpp's llama-server.
+> The current MLX setup uses a different slot/cache model. The concepts still apply
+> as design goals but the implementation details differ.
+
 **Date:** 2026-04-29
 
 ---

@@ -1,5 +1,11 @@
 # Dual-Model Architecture Proposal
 
+> **Historical note:** This proposal was written during the llama.cpp evaluation
+> phase. The current setup uses MLX (mlx-lm-turbo) with turboquant-mlx for KV
+> cache compression. The dual-model concepts (dense + MoE) still apply, but the
+> underlying server architecture is different. Kept as reference for architecture
+> decisions.
+
 **Date:** 2026-04-29
 **Context:** Characterizing optimal slot/cache configuration for agent workflows
 

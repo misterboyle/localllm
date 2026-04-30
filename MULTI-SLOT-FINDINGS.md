@@ -1,5 +1,9 @@
 # Multi-Slot Test Findings — Qwen3.6-27B Dense Server
 
+> **Historical note:** These findings are from llama.cpp testing. The current MLX
+> setup uses a different slot/cache architecture (no LCP matching, no checkpoints,
+> different prompt cache behavior). Kept as reference for migration decisions.
+
 **Date:** 2026-04-29
 **Test config:** 2 slots, 262K per-slot, 524K total context, --kv-unified, --cache-ram 65536, --ctx-checkpoints 32
 **Conversations:** A (logrotate-lite, conversational), B (data pipeline, file-heavy)

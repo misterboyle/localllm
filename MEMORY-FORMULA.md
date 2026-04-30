@@ -1,5 +1,10 @@
 # Memory Budget Formula — Qwen3.6-27B Dense Server
 
+> **Historical note:** This formula was derived from llama.cpp testing. The MLX
+> server has different memory characteristics (no checkpoints, KV cache
+> quantization via turboquant-mlx, different concurrency model). Kept as
+> reference for understanding the migration.
+
 **Validated:** 2026-04-29, live testing, 2-slot config
 **Model:** Qwen3.6-27B-UD-Q6_K_XL
 **Server:** --kv-unified, --ctx-checkpoints 32, --cache-ram 65536

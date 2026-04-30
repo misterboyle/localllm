@@ -1,0 +1,66 @@
+// models.jsonc — per-user server config
+// Copy to ~/.localllm/models.jsonc and edit as needed
+// This file is NOT tracked in git.
+
+{
+  // Global defaults — overridden per-server below
+  "defaults": {
+    // KV cache quantization: [K_bits, V_bits], valid values: 2, 4, 8
+    // 8,2 = K8+V2, -20% memory, tested identical quality
+    // 8,4 = K8+V4, -18% memory, safer bet
+    "kvQuant": [8, 2],
+
+    // Only quantize caches with >= N tokens (short prefills stay fp16)
+    "kvQuantStart": 1024,
+
+    // Prompt cache: max KV caches held in RAM
+    "promptCacheSize": 20,
+
+    // Prompt cache: max disk entries (survives restart)
+    "promptCacheDiskSize": 100,
+
+    // Parallel decode slots and prefill workers
+    "decodeConcurrency": 32,
+    "prefillConcurrency": 8,
+    "prefillStepSize": 2048,
+
+    // Sampling defaults
+    "temperature": 0.0,
+    "maxTokens": 4096,
+
+    // Chat template kwargs passed to tokenizer.apply_chat_template()
+    "chatTemplateArgs": {
+      "enable_thinking": true
+    }
+  },
+
+  // Per-server config
+  "servers": {
+    // Dense 27B — disabled by default, enable for comparison
+    "dense": {
+      "enabled": false,
+      "model": "Qwen3.6-27B-UD-MLX-4bit",
+      "port": 30090,
+      "logFile": "dense.log"
+      // No overrides needed — inherits all defaults above
+    },
+
+    // MoE 35B-A3B — primary model
+    "moe": {
+      "enabled": true,
+      "model": "Qwen3.6-35B-A3B-UD-MLX-4bit",
+      "port": 30083,
+      "logFile": "moe.log"
+      // Override per-server as needed, e.g.:
+      // "kvQuant": [8, 4],
+      // "promptCacheSize": 30,
+      // "decodeConcurrency": 16,
+    }
+  },
+
+  // Paths (usually don't need to change)
+  "modelDir": "$HOME/.localllm/models",
+  "pidDir": "$HOME/.localllm/pids",
+  "cacheDir": "$HOME/.localllm/prompt_cache",
+  "logDir": "$HOME/.localllm"
+}

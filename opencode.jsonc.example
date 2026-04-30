@@ -1,17 +1,29 @@
+// opencode.jsonc example — MLX server configuration
+// Copy to ~/.config/opencode/opencode.jsonc and edit as needed
+//
+// The servers are defined in ~/.localllm/models.jsonc
+// Ports: mlx-dense=30090, mlx-moe=30083 (when enabled)
+//
+// NOTE: MLX model `name` key must be the full local path. The MLX server
+// re-resolves the model from each request, so the key must match the path
+// loaded at startup. (The `name` field inside is just display text.)
+
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "llama-moe": {
-      "name": "Llama.cpp MoE",
+    // --- MLX servers ---
+    "mlx-dense": {
+      "name": "MLX Qwen3.6-27B Dense",
       "npm": "@ai-sdk/openai-compatible",
       "options": {
-        "baseURL": "http://localhost:30081/v1",
+        "baseURL": "http://localhost:30090/v1",
         "apiKey": "sk-local"
       },
       "models": {
-        "qwen3.6-35b-a3b": {
-          "name": "Qwen3.6-35B-A3B",
-          "maxTokens": 98304,
+        // Key must be full local path — MLX server re-resolves from request
+        "$HOME/.localllm/models/Qwen3.6-27B-UD-MLX-4bit": {
+          "name": "Qwen3.6-27B-UD-MLX-4bit",
+          "maxTokens": 262144,
           "limit": {
             "context": 262144,
             "output": 8192
@@ -19,17 +31,18 @@
         }
       }
     },
-    "llama-dense": {
-      "name": "Llama.cpp Dense",
+    "mlx-moe": {
+      "name": "MLX Qwen3.6-35B-A3B MoE",
       "npm": "@ai-sdk/openai-compatible",
       "options": {
-        "baseURL": "http://localhost:30080/v1",
+        "baseURL": "http://localhost:30083/v1",
         "apiKey": "sk-local"
       },
       "models": {
-        "qwen3.6-27b": {
-          "name": "Qwen3.6-27B",
-          "maxTokens": 40960,
+        // Key must be full local path — MLX server re-resolves from request
+        "$HOME/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit": {
+          "name": "Qwen3.6-35B-A3B-UD-MLX-4bit",
+          "maxTokens": 262144,
           "limit": {
             "context": 262144,
             "output": 8192
@@ -38,5 +51,12 @@
       }
     }
   },
-  "model": "llama-moe/qwen3.6-35b-a3b"
+
+  // Default model — change to any provider/model combo above
+  "model": "mlx-moe/qwen3.6-35b-a3b",
+
+  "compaction": {
+    "auto": false,
+    "prune": false
+  }
 }

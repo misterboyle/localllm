@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Slot 1 agent: builds context through data science analysis
-# Different conversation to ensure separate slot via LCP
+# Different conversation to ensure separate slot
 set -euo pipefail
 
 SESSION="${1:-slot1-test}"
@@ -16,7 +16,7 @@ SEED
 
 # Initial prompt - very different from Slot 0 to ensure separate slot
 opencode run \
-  -m llama-dense/qwen3.6-27b \
+  -m mlx-dense/qwen3.6-27b \
   -s "$SESSION" \
   --dir "$WORKDIR" \
   --title "Slot 1: Data Analysis Pipeline" \
@@ -57,7 +57,7 @@ for i in "${!follow_ups[@]}"; do
   bash "$HOME/localllm/snapshot-memory.sh" "slot1-followup-$((i+1))-before" 2>/dev/null || true
   
   opencode run \
-    -m llama-dense/qwen3.6-27b \
+    -m mlx-dense/qwen3.6-27b \
     -s "$SESSION" \
     --dir "$WORKDIR" \
     "${follow_ups[$i]}"

@@ -1,5 +1,9 @@
 # KV Cache Multi-Slot Memory Scaling Test — Progress Report
 
+> **Historical note:** This test was run against llama.cpp's llama-server. The
+> current MLX setup uses a different memory model (no checkpoints, different KV
+> cache quantization). Kept as reference for migration decisions.
+
 **Date:** 2026-04-29
 **Model:** Qwen3.6-27B-UD-Q6_K_XL (dense)
 **Server config:** 2 slots, 262K per-slot, 524K total context, --kv-unified, --cache-ram 65536, --ctx-checkpoints 32, --checkpoint-every-n-tokens 8192

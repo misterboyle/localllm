@@ -1,5 +1,11 @@
 # KV Cache Deep Dive: Qwen3.6-35B-A3B on M5 Max 128GB
 
+> **Historical note:** This document analyzes llama.cpp's llama-server internals
+> (LCP matching, checkpoints, unified KV buffers, etc.). The current setup uses
+> MLX via `mlx-lm-turbo` which has a different architecture — slots, prompt cache,
+> and KV cache quantization instead of llama.cpp's checkpoint/LCP system.
+> Kept here as reference for understanding the migration decisions.
+
 ## Overview
 
 This documents the KV cache mechanics of llama.cpp's llama-server for the Qwen3.6-35B-A3B MoE model with 8 slots at 262K context, validated against actual production logs (moe.log, 12,932 lines).

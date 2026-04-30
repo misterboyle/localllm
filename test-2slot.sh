@@ -33,7 +33,7 @@ echo "[$(date '+%H:%M:%S')] Server starting, PID: $(cat $HOME/.localllm/pids/tes
 
 # Wait for server ready
 for i in $(seq 1 60); do
-  if curl -sf http://localhost:30080/health > /dev/null 2>&1; then
+  if curl -sf http://localhost:30090/health > /dev/null 2>&1; then
     echo "[$(date '+%H:%M:%S')] Server ready" | tee -a "$TEST_LOG"
     break
   fi
@@ -42,7 +42,7 @@ done
 
 # Record baseline memory
 echo "=== BASELINE MEMORY ===" | tee -a "$TEST_LOG"
-ps aux | grep llama-server | grep -v grep | awk '{printf "MEM%%: %.1f, RSS: %.1f GB, VSZ: %.1f GB\n", $4, $6/1024, $5/1024}' | tee -a "$TEST_LOG"
+ps aux | grep mlx_lm.server | grep -v grep | awk '{printf "MEM%%: %.1f, RSS: %.1f GB, VSZ: %.1f GB\n", $4, $6/1024, $5/1024}' | tee -a "$TEST_LOG"
 
 # Show server config
 echo "=== SERVER CONFIG ===" | tee -a "$TEST_LOG"

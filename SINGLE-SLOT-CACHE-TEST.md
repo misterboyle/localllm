@@ -1,5 +1,9 @@
 # Single-Slot + Cache Test Plan
 
+> **Historical note:** This test plan was for llama.cpp's llama-server. The MLX
+> server has different cache behavior (no checkpoints, prompt cache works
+> differently). Kept as reference.
+
 **Date:** 2026-04-29
 **Goal:** Characterize cache behavior with 4 conversations competing for 1 slot
 

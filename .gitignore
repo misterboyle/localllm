@@ -1,10 +1,22 @@
-models/*.pid
+# Per-user config (machine-specific)
+models.conf
+models.jsonc
+
+# Logs
 *.log
+
+# PIDs
+*.pid
+models/*.pid
+
+# Models (large files, not tracked)
 *.gguf
+
+# Claude artifacts
 .claude/
 
+# Python venv
+venv/
 
-# Local model config (contains machine-specific paths)
-models.conf
-*.pid
-*.log
+# MLX prompt cache
+prompt_cache/

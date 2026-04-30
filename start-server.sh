@@ -2,156 +2,243 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF_FILE="$HOME/.localllm/models.conf"
+CONF_FILE="$HOME/.localllm/models.jsonc"
 
-# Load model config (per-user, not in git)
-if [ -f "$CONF_FILE" ]; then
-  # shellcheck source=models.conf
-  . "$CONF_FILE"
+# Activate Python venv
+VENV_DIR="${VENV_DIR:-$HOME/.localllm/venv}"
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  echo "ERROR: venv not found at $VENV_DIR"
+  echo "Run: python3.14 -m venv $VENV_DIR && source $VENV_DIR/bin/activate && pip install -e $HOME/mlx-lm-turbo"
+  exit 1
+fi
+# shellcheck disable=SC1091
+. "$VENV_DIR/bin/activate"
+
+# Ensure mlx-lm is installed from local repo (editable, tracks updates)
+MLX_LM_REPO="${MLX_LM_REPO:-$HOME/mlx-lm-turbo}"
+if [ -f "$MLX_LM_REPO/setup.py" ]; then
+  pip install -e "$MLX_LM_REPO" --quiet 2>/dev/null || true
 fi
 
-MODEL_DIR="${MODEL_DIR:-$HOME/.localllm/models}"
-DENSE_MODEL="${DENSE_MODEL:-Qwen3.6-27B-UD-Q6_K_XL.gguf}"
-MOE_MODEL="${MOE_MODEL:-Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf}"
+# Ensure turboquant-mlx is installed from local repo (editable, tracks updates)
+TQ_MLX_REPO="${TQ_MLX_REPO:-$HOME/turboquant-mlx}"
+if [ -f "$TQ_MLX_REPO/pyproject.toml" ]; then
+  pip install -e "$TQ_MLX_REPO" --quiet 2>/dev/null || true
+fi
 
-LLAMA_SERVER="${LLAMA_SERVER:-$HOME/llama.cpp-turbo/build/bin/llama-server}"
-DENSE_MODEL="$MODEL_DIR/$DENSE_MODEL"
-MOE_MODEL="$MODEL_DIR/$MOE_MODEL"
+if [ ! -f "$CONF_FILE" ]; then
+  echo "ERROR: config not found at $CONF_FILE"
+  echo "Copy models.jsonc.example there and edit."
+  exit 1
+fi
 
-DENSE_PORT="${DENSE_PORT:-30080}"
-MOE_PORT="${MOE_PORT:-30081}"
+# Parse JSONC into flat shell variables via Python.
+# Writes NAME=VALUE lines to a temp file for safe eval with shlex quoting.
+CONF_ENV=$(mktemp)
 
-DENSE_PID_DIR="${DENSE_PID_DIR:-$HOME/.localllm/pids}"
-MOE_PID_DIR="${MOE_PID_DIR:-$HOME/.localllm/pids}"
+python3 -c "
+import json, os, sys, re, shlex
 
-# Defaults (overridden by models.conf if present)
-DENSE_ENABLED=${DENSE_ENABLED:-0}  # Set to 1 in models.conf to enable dense server
-DENSE_THREADS=${DENSE_THREADS:-q8_0}
-DENSE_VARIANT=${DENSE_VARIANT:-turbo4}
-DENSE_GPULAYERS=${DENSE_GPULAYERS:-99}
-DENSE_PER_SLOT_CONTEXT=${DENSE_PER_SLOT_CONTEXT:-262144}  # 262K per slot
-DENSE_SLOTS=${DENSE_SLOTS:-2}
-DENSE_CONTEXT=$((DENSE_PER_SLOT_CONTEXT * DENSE_SLOTS))
+raw = open('$CONF_FILE').read()
+raw = re.sub(r'//.*?$', '', raw, flags=re.MULTILINE)
+raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.DOTALL)
+cfg = json.loads(raw)
 
-# KV cache tuning (see KV-CACHE-ANALYSIS.md for details)
-DENSE_CACHE_RAM=${DENSE_CACHE_RAM:-65536}       # 64GB prompt cache RAM
-DENSE_CTX_CHECKPOINTS=${DENSE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
-DENSE_CHECKPOINT_EVERY_NT=${DENSE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
-DENSE_CACHE_REUSE=${DENSE_CACHE_REUSE:-128}  # Min chunk size for KV cache reuse
+home = os.environ['HOME']
 
-MOE_ENABLED=${MOE_ENABLED:-1}
-MOE_THREADS=${MOE_THREADS:-q8_0}
-MOE_VARIANT=${MOE_VARIANT:-turbo4}
-MOE_GPULAYERS=${MOE_GPULAYERS:-99}
-MOE_PER_SLOT_CONTEXT=${MOE_PER_SLOT_CONTEXT:-262144}
-MOE_SLOTS=${MOE_SLOTS:-8}
-MOE_CONTEXT=$((MOE_PER_SLOT_CONTEXT * MOE_SLOTS))
+def v(k, default=None):
+    return cfg.get(k, default)
 
-# MoE-specific KV cache tuning
-MOE_CACHE_RAM=${MOE_CACHE_RAM:-65536}        # 64GB prompt cache RAM
-MOE_CTX_CHECKPOINTS=${MOE_CTX_CHECKPOINTS:-32}  # Max checkpoints per slot
-MOE_CHECKPOINT_EVERY_NT=${MOE_CHECKPOINT_EVERY_NT:-8192}  # Checkpoint every N tokens during prefill
-MOE_CACHE_REUSE=${MOE_CACHE_REUSE:-128}       # Min chunk size for KV cache reuse
+def expand(s):
+    return s.replace('\$HOME', home) if isinstance(s, str) else s
+
+def p(k, val):
+    print(f'{k}={shlex.quote(str(val))}')
+
+pid_dir = expand(v('pidDir', home + '/.localllm/pids'))
+cache_dir = expand(v('cacheDir', home + '/.localllm/prompt_cache'))
+log_dir = expand(v('logDir', home + '/.localllm'))
+model_dir = expand(v('modelDir', home + '/.localllm/models'))
+
+d = v('defaults', {})
+p('CONF_KV_QUANT', f'{d[\"kvQuant\"][0]},{d[\"kvQuant\"][1]}')
+p('CONF_KV_QUANT_START', d['kvQuantStart'])
+p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
+p('CONF_PROMPT_CACHE_DISK_SIZE', d['promptCacheDiskSize'])
+p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
+p('CONF_PREFILL_CONCURRENCY', d['prefillConcurrency'])
+p('CONF_PREFILL_STEP_SIZE', d['prefillStepSize'])
+p('CONF_TEMP', d['temperature'])
+p('CONF_MAX_TOKENS', d['maxTokens'])
+p('CONF_CHAT_TEMPLATE_ARGS', json.dumps(d['chatTemplateArgs']))
+
+for name, srv in cfg.get('servers', {}).items():
+    n = name.upper()
+    p(f'{n}_ENABLED', 1 if srv['enabled'] else 0)
+    p(f'{n}_MODEL', srv['model'])
+    p(f'{n}_PORT', srv['port'])
+    p(f'{n}_LOG', srv['logFile'])
+    for key, jkey in [('kvQuant', 'KV_QUANT'), ('kvQuantStart', 'KV_QUANT_START'),
+                       ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
+                       ('decodeConcurrency', 'DECODE_CONCURRENCY'),
+                       ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
+                       ('prefillStepSize', 'PREFILL_STEP_SIZE'),
+                       ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS')]:
+        if key in srv:
+            val = srv[key]
+            if key == 'kvQuant':
+                val = f'{val[0]},{val[1]}'
+            p(f'{n}_{jkey}', val)
+
+p('CONF_PID_DIR', pid_dir)
+p('CONF_CACHE_DIR', cache_dir)
+p('CONF_LOG_DIR', log_dir)
+p('CONF_MODEL_DIR', model_dir)
+" > "$CONF_ENV" 2>&1
+
+if [ ! -s "$CONF_ENV" ]; then
+  echo "ERROR: Failed to parse $CONF_FILE"
+  cat "$CONF_ENV"
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "$CONF_ENV"
 
 log() {
   echo "[$(date '+%H:%M:%S')] $*"
 }
 
+to_upper() {
+  echo "$1" | tr '[:lower:]' '[:upper:]'
+}
+
+# Disable hf_xet (crashes on Python 3.14 due to multiprocessing semaphore leak)
+export HF_HUB_ENABLE_XET=0
+
+PID_DIR="$CONF_PID_DIR"
+CACHE_DIR="$CONF_CACHE_DIR"
+LOG_DIR="$CONF_LOG_DIR"
+
+# Resolve per-server values (override or fallback to defaults)
+resolve() {
+  local var="$1" default_var="$2"
+  eval "local val=\${${var}:-}"
+  if [ -n "$val" ]; then
+    echo "$val"
+  else
+    eval "echo \${${default_var}}"
+  fi
+}
+
 stop_servers() {
   log "Stopping servers..."
-  [ -f "$DENSE_PID_DIR/dense.pid" ] && kill "$(cat "$DENSE_PID_DIR/dense.pid")" 2>/dev/null && rm "$DENSE_PID_DIR/dense.pid"
-  [ -f "$MOE_PID_DIR/moe.pid" ] && kill "$(cat "$MOE_PID_DIR/moe.pid")" 2>/dev/null && rm "$MOE_PID_DIR/moe.pid"
+  for name in dense moe; do
+    local pidfile="$PID_DIR/${name}.pid"
+    [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null && rm -f "$pidfile"
+  done
+  rm -f "$CONF_ENV"
   log "Stopped."
   exit 0
 }
 
 trap stop_servers EXIT INT TERM
 
-check_model() {
+mkdir -p "$PID_DIR" "$CACHE_DIR"
+
+# Build server args for a given server name
+build_args() {
   local name="$1"
-  local path="$2"
-  if [ ! -f "$path" ]; then
-    log "ERROR: $name model not found at $path"
-    log "Expected in: $MODEL_DIR"
-    log "Download from HuggingFace or copy there"
-    return 1
+  local upper
+  upper=$(to_upper "$name")
+
+  local model kv qstart csize dconc pconc pstep temp maxtok chat_args port logf
+  model=$(resolve "${upper}_MODEL" "error")
+  # Resolve model to local path if it exists under modelDir
+  if [ -d "$CONF_MODEL_DIR/$model" ]; then
+    model="$CONF_MODEL_DIR/$model"
+  elif [ -d "$CONF_MODEL_DIR/$(basename "$model")" ]; then
+    model="$CONF_MODEL_DIR/$(basename "$model")"
+  elif [ -d "$CONF_MODEL_DIR/${model#*/}" ]; then
+    model="$CONF_MODEL_DIR/${model#*/}"
   fi
-  return 0
+  port=$(resolve "${upper}_PORT" "error")
+  kv=$(resolve "${upper}_KV_QUANT" "CONF_KV_QUANT")
+  qstart=$(resolve "${upper}_KV_QUANT_START" "CONF_KV_QUANT_START")
+  csize=$(resolve "${upper}_PROMPT_CACHE_SIZE" "CONF_PROMPT_CACHE_SIZE")
+  dconc=$(resolve "${upper}_DECODE_CONCURRENCY" "CONF_DECODE_CONCURRENCY")
+  pconc=$(resolve "${upper}_PREFILL_CONCURRENCY" "CONF_PREFILL_CONCURRENCY")
+  pstep=$(resolve "${upper}_PREFILL_STEP_SIZE" "CONF_PREFILL_STEP_SIZE")
+  temp=$(resolve "${upper}_TEMP" "CONF_TEMP")
+  maxtok=$(resolve "${upper}_MAX_TOKENS" "CONF_MAX_TOKENS")
+  chat_args="$CONF_CHAT_TEMPLATE_ARGS"
+  logf="$CONF_LOG_DIR/$(resolve "${upper}_LOG" "${name}.log")"
+
+  local enabled_var="${upper}_ENABLED"
+  eval "local enabled=\${${enabled_var:-0}}"
+
+  if [ "$enabled" != "1" ]; then
+    return 0
+  fi
+
+  log "Starting $name on port $port (model=$model, kv_quant=$kv, cache=$csize, decode=$dconc)..."
+
+  nohup mlx_lm.server \
+    --model "$model" \
+    --port "$port" \
+    --host 127.0.0.1 \
+    --kv-cache-quantization "$kv" \
+    --quantized-kv-start "$qstart" \
+    --prompt-cache-size "$csize" \
+    --prompt-cache-dir "$CACHE_DIR" \
+    --prompt-cache-disk-size "$CONF_PROMPT_CACHE_DISK_SIZE" \
+    --decode-concurrency "$dconc" \
+    --prompt-concurrency "$pconc" \
+    --prefill-step-size "$pstep" \
+    --temp "$temp" \
+    --max-tokens "$maxtok" \
+    --chat-template-args "$chat_args" \
+    >> "$logf" 2>&1 &
+
+  echo $! > "$PID_DIR/${name}.pid"
+  log "$name PID: $(cat "$PID_DIR/${name}.pid")"
 }
 
-if [ "$DENSE_ENABLED" = "1" ]; then
-  check_model "dense" "$DENSE_MODEL" || exit 1
-fi
-if [ "$MOE_ENABLED" = "1" ]; then
-  check_model "moe" "$MOE_MODEL" || exit 1
-fi
+# Start each server
+build_args dense
+build_args moe
 
-mkdir -p "$DENSE_PID_DIR"
-mkdir -p "$MOE_PID_DIR"
-
-# Start dense server (port 30080) if enabled
-if [ "$DENSE_ENABLED" = "1" ]; then
-  log "Starting dense server on port $DENSE_PORT (per-slot context=$DENSE_PER_SLOT_CONTEXT, slots=$DENSE_SLOTS, total context=$DENSE_CONTEXT, cache_ram=$DENSE_CACHE_RAM, checkpoints=$DENSE_CTX_CHECKPOINTS, checkpoint_every=$DENSE_CHECKPOINT_EVERY_NT, cache_reuse=$DENSE_CACHE_REUSE)..."
-  nohup $LLAMA_SERVER \
-    --model "$DENSE_MODEL" \
-    --port "$DENSE_PORT" \
-    -ctk "$DENSE_THREADS" -ctv "$DENSE_VARIANT" \
-    --flash-attn on \
-    --jinja \
-    --gpu-layers $DENSE_GPULAYERS \
-    -c $DENSE_CONTEXT -np $DENSE_SLOTS \
-    --kv-unified \
-    --cache-ram $DENSE_CACHE_RAM \
-    --ctx-checkpoints $DENSE_CTX_CHECKPOINTS \
-    --checkpoint-every-n-tokens $DENSE_CHECKPOINT_EVERY_NT \
-    --cache-reuse $DENSE_CACHE_REUSE \
-    --host 127.0.0.1 \
-    > >(while IFS= read -r line; do echo "[$(date '+%H:%M:%S')] [DENSE] $line"; done >> "$HOME/.localllm/dense.log") 2>&1 &
-  echo $! > "$DENSE_PID_DIR/dense.pid"
-  log "Dense server PID: $(cat $DENSE_PID_DIR/dense.pid)"
-fi
-
-# Start moe server (port 30081) if enabled
-if [ "$MOE_ENABLED" = "1" ]; then
-  log "Starting moe server on port $MOE_PORT (per-slot context=$MOE_PER_SLOT_CONTEXT, slots=$MOE_SLOTS, total context=$MOE_CONTEXT, cache_ram=$MOE_CACHE_RAM, checkpoints=$MOE_CTX_CHECKPOINTS, checkpoint_every=$MOE_CHECKPOINT_EVERY_NT, cache_reuse=$MOE_CACHE_REUSE)..."
-  nohup $LLAMA_SERVER \
-    --model "$MOE_MODEL" \
-    --port "$MOE_PORT" \
-    -ctk "$MOE_THREADS" -ctv "$MOE_VARIANT" \
-    --jinja \
-    --flash-attn on \
-    --gpu-layers $MOE_GPULAYERS \
-    -c $MOE_CONTEXT -np $MOE_SLOTS \
-    --kv-unified \
-    --cache-ram $MOE_CACHE_RAM \
-    --ctx-checkpoints $MOE_CTX_CHECKPOINTS \
-    --checkpoint-every-n-tokens $MOE_CHECKPOINT_EVERY_NT \
-    --cache-reuse $MOE_CACHE_REUSE \
-    --host 127.0.0.1 \
-    > >(while IFS= read -r line; do echo "[$(date '+%H:%M:%S')] [MOE] $line"; done >> "$HOME/.localllm/moe.log") 2>&1 &
-  echo $! > "$MOE_PID_DIR/moe.pid"
-  log "Moe server PID: $(cat $MOE_PID_DIR/moe.pid)"
-fi
-
-# Build health check and log file list based on enabled servers
+# Build health checks and log tail list
 HEALTH_CHECK=""
 LOG_FILES=""
-if [ "$DENSE_ENABLED" = "1" ]; then
-  HEALTH_CHECK="${HEALTH_CHECK}curl -sf http://localhost:$DENSE_PORT/health > /dev/null 2>&1"
-  LOG_FILES="$LOG_FILES $HOME/.localllm/dense.log"
-fi
-if [ "$MOE_ENABLED" = "1" ]; then
+for name in dense moe; do
+  upper=$(to_upper "$name")
+  enabled_var="${upper}_ENABLED"
+  eval "enabled=\${${enabled_var:-0}}"
+  [ "$enabled" != "1" ] && continue
+
+  port_var="${upper}_PORT"
+  eval "port=\${${port_var}}"
+
   [ -n "$HEALTH_CHECK" ] && HEALTH_CHECK="$HEALTH_CHECK && "
-  HEALTH_CHECK="${HEALTH_CHECK}curl -sf http://localhost:$MOE_PORT/health > /dev/null 2>&1"
-  LOG_FILES="$LOG_FILES $HOME/.localllm/moe.log"
-fi
+  HEALTH_CHECK="${HEALTH_CHECK}curl -sf http://localhost:$port/health > /dev/null 2>&1"
+
+  logf="$CONF_LOG_DIR/$(resolve "${upper}_LOG" "${name}.log")"
+  LOG_FILES="$LOG_FILES $logf"
+done
 
 log "Waiting for server(s) to be ready..."
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
   if eval "$HEALTH_CHECK"; then
     log "Servers ready."
-    [ "$DENSE_ENABLED" = "1" ] && log "  Dense: http://localhost:$DENSE_PORT/v1"
-    [ "$MOE_ENABLED" = "1" ] && log "  Moe:   http://localhost:$MOE_PORT/v1"
+    for name in dense moe; do
+      upper=$(to_upper "$name")
+      enabled_var="${upper}_ENABLED"
+      eval "enabled=\${${enabled_var:-0}}"
+      [ "$enabled" != "1" ] && continue
+      port_var="${upper}_PORT"
+      eval "port=\${${port_var}}"
+      log "  $(to_upper "$name"): http://localhost:$port/v1/chat/completions"
+    done
     log "Press Ctrl+C to stop."
     tail -f $LOG_FILES --pid=$$ 2>/dev/null || true
     exit 0
@@ -159,7 +246,5 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
-log "Timed out waiting for server(s). Check logs:"
-[ "$DENSE_ENABLED" = "1" ] && log "  Dense: $HOME/.localllm/dense.log"
-[ "$MOE_ENABLED" = "1" ] && log "  Moe:   $HOME/.localllm/moe.log"
+log "Timed out. Check logs in $CONF_LOG_DIR/"
 exit 1

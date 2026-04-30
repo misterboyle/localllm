@@ -16,7 +16,7 @@ SEED
 
 # Initial prompt - creates the foundation
 opencode run \
-  -m llama-dense/qwen3.6-27b \
+  -m mlx-dense/qwen3.6-27b \
   -s "$SESSION" \
   --dir "$WORKDIR" \
   --title "Slot 0: Incremental CLI Builder" \
@@ -57,7 +57,7 @@ for i in "${!follow_ups[@]}"; do
   bash "$HOME/localllm/snapshot-memory.sh" "slot0-followup-$((i+1))-before" 2>/dev/null || true
   
   opencode run \
-    -m llama-dense/qwen3.6-27b \
+    -m mlx-dense/qwen3.6-27b \
     -s "$SESSION" \
     --dir "$WORKDIR" \
     "${follow_ups[$i]}"
