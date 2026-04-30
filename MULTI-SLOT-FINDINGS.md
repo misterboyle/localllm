@@ -116,10 +116,11 @@ When Conv B's conversation grows beyond 8K preserved tokens, the next turn's n_p
 {
   "compaction": {
     "auto": false,
-    "preserve_recent_tokens": 16000
+    "prune": false
   }
 }
 ```
+Both `auto` (automatic compaction) and `prune` (trimming old tool outputs) need to be disabled. `prune` was likely the primary culprit — it trims tool outputs between turns, changing the conversation history and causing n_past rollbacks.
 
 **Recommendation for local testing:** Disable compaction entirely (`"auto": false`) or increase `preserve_recent_tokens` to 16K+. This eliminates n_past rollbacks, checkpoint mismatches, and full reprocessing events.
 
