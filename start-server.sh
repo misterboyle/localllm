@@ -5,9 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF_FILE="$HOME/.localllm/models.jsonc"
 
 # Server selection: moe, dense, both, or all (default)
-SERVER_FILTER="${1:-all}"
+# When no argument given, only start servers with enabled=true in models.jsonc
+# When argument given, start those servers regardless of enabled flag
+SERVER_FILTER="${1:-}"
 case "$SERVER_FILTER" in
   moe|dense|both|all) ;;
+  "") ;; # will be resolved from config
   *) echo "ERROR: unknown server '$SERVER_FILTER'. Use: moe, dense, both, all"; exit 1 ;;
 esac
 
@@ -112,6 +115,25 @@ if [ ! -s "$CONF_ENV" ]; then
 fi
 # shellcheck disable=SC1090
 source "$CONF_ENV"
+
+# Resolve default: if no filter given, start only enabled servers
+if [ -z "$SERVER_FILTER" ]; then
+  enabled_count=0
+  enabled_list=""
+  for name in dense moe; do
+    upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
+    eval "val=\${${upper}_ENABLED:-0}"
+    if [ "$val" = "1" ]; then
+      enabled_count=$((enabled_count + 1))
+      enabled_list="$enabled_list $name"
+    fi
+  done
+  case $enabled_count in
+    0) echo "ERROR: no servers enabled in $CONF_FILE"; exit 1 ;;
+    1) SERVER_FILTER="$enabled_list" ;;
+    *) SERVER_FILTER="both" ;;
+  esac
+fi
 
 log() {
   echo "[$(date '+%H:%M:%S')] $*"
@@ -224,7 +246,7 @@ case "$SERVER_FILTER" in
   moe)    build_args moe ;;
   dense)  build_args dense ;;
   both)   build_args dense; build_args moe ;;
-  all)    build_args dense; build_args moe ;;
+  all|"") for name in dense moe; do build_args "$name"; done ;;
 esac
 
 # Build health checks and log tail list for selected servers
@@ -233,7 +255,8 @@ LOG_FILES=""
 case "$SERVER_FILTER" in
   moe)    SERVERS="moe" ;;
   dense)  SERVERS="dense" ;;
-  both|all) SERVERS="dense moe" ;;
+  both|all|"") SERVERS="dense moe" ;;
+  *)      SERVERS="$SERVER_FILTER" ;;
 esac
 
 for name in $SERVERS; do
