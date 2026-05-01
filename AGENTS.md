@@ -67,6 +67,8 @@ Code conventions for shell scripts, Python, and configuration files.
 - Module docstring on first line: triple-quoted, describes purpose and usage
 - Standard library imports first, then third-party (none preferred)
 - Constants in UPPERCASE at module level
+- Scripts in this repo are stdlib-only — run with system `python3`
+- Scripts in `mlx-lm-turbo/` require the venv — run with `mlx-lm-turbo/venv/bin/python3`
 
 ### Style
 

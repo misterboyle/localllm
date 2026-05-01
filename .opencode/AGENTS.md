@@ -67,6 +67,12 @@ These are reference numbers for the default setup. Actual values depend on model
 - Active KV: 64 KB/token (fp16), 22 KB/token (K8,V2 cached)
 - Max 3 concurrent conversations at 262K context
 
+## Python
+
+- Scripts in this repo (`memory-budget.py`): use system `python3` (stdlib only)
+- Scripts in `mlx-lm-turbo/` (benchmarks, server): use `mlx-lm-turbo/venv/bin/python3`
+- **Never** use system `python3` for mlx-lm-turbo scripts — they require aiohttp, numpy, and other venv packages
+
 ## Key Files
 
 - `~/.localllm/models.jsonc` — server config (enable/disable, ports, concurrency)

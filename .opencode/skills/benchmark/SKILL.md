@@ -23,28 +23,31 @@ Concurrency benchmarks directly measure how well the server handles multiple sim
    PORT=30083
    MODEL=~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit
 
-   # Single-threaded baseline
-   python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-     --url "http://localhost:$PORT/v1/chat/completions" \
-     --api-key sk-local \
-     --model "$MODEL" \
-     --max-tokens 256 --concurrency 1 --total-requests 5
+    # Use venv python — mlx-lm-turbo scripts require aiohttp, numpy, etc.
+    PY=mlx-lm-turbo/venv/bin/python3
 
-   # Multi-threaded
-   python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-     --url "http://localhost:$PORT/v1/chat/completions" \
-     --api-key sk-local \
-     --model "$MODEL" \
-     --max-tokens 256 --concurrency 4 --total-requests 20 \
-     --output bench-conc4.json
+    # Single-threaded baseline
+    "$PY" mlx-lm-turbo/benchmarks/server_benchmark.py \
+      --url "http://localhost:$PORT/v1/chat/completions" \
+      --api-key sk-local \
+      --model "$MODEL" \
+      --max-tokens 256 --concurrency 1 --total-requests 5
 
-   # High concurrency
-   python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-     --url "http://localhost:$PORT/v1/chat/completions" \
-     --api-key sk-local \
-     --model "$MODEL" \
-     --max-tokens 256 --concurrency 8 --total-requests 32 \
-     --output bench-conc8.json
+    # Multi-threaded
+    "$PY" mlx-lm-turbo/benchmarks/server_benchmark.py \
+      --url "http://localhost:$PORT/v1/chat/completions" \
+      --api-key sk-local \
+      --model "$MODEL" \
+      --max-tokens 256 --concurrency 4 --total-requests 20 \
+      --output bench-conc4.json
+
+    # High concurrency
+    "$PY" mlx-lm-turbo/benchmarks/server_benchmark.py \
+      --url "http://localhost:$PORT/v1/chat/completions" \
+      --api-key sk-local \
+      --model "$MODEL" \
+      --max-tokens 256 --concurrency 8 --total-requests 32 \
+      --output bench-conc8.json
    ```
 
 4. Compare results — look at:

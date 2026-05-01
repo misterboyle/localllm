@@ -23,17 +23,20 @@ Run the complete benchmark suite against the MoE server. Each concurrency level 
    BASE="http://localhost:$PORT/v1/chat/completions"
    API="sk-local"
 
-   for CONC in 1 4 8 12; do
-     python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-       --url "$BASE" \
-       --api-key "$API" \
-       --model "$MODEL" \
-       --max-tokens 256 \
-       --concurrency "$CONC" \
-       --total-requests $((CONC * 4)) \
-       --output "bench-moe-conc${CONC}.json"
-     echo "---"
-   done
+    # Use venv python — mlx-lm-turbo scripts require aiohttp, numpy, etc.
+    PY=mlx-lm-turbo/venv/bin/python3
+
+    for CONC in 1 4 8 12; do
+      "$PY" mlx-lm-turbo/benchmarks/server_benchmark.py \
+        --url "$BASE" \
+        --api-key "$API" \
+        --model "$MODEL" \
+        --max-tokens 256 \
+        --concurrency "$CONC" \
+        --total-requests $((CONC * 4)) \
+        --output "bench-moe-conc${CONC}.json"
+      echo "---"
+    done
    ```
 
 4. Summarize results:
