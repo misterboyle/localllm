@@ -4,6 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF_FILE="$HOME/.localllm/models.jsonc"
 
+# Server selection: moe, dense, both, or all (default)
+SERVER_FILTER="${1:-all}"
+case "$SERVER_FILTER" in
+  moe|dense|both|all) ;;
+  *) echo "ERROR: unknown server '$SERVER_FILTER'. Use: moe, dense, both, all"; exit 1 ;;
+esac
+
 # Activate Python venv
 VENV_DIR="${VENV_DIR:-$HOME/.localllm/venv}"
 if [ ! -f "$VENV_DIR/bin/activate" ]; then
@@ -212,14 +219,24 @@ build_args() {
   log "$name PID: $(cat "$PID_DIR/${name}.pid")"
 }
 
-# Start each server
-build_args dense
-build_args moe
+# Start selected servers
+case "$SERVER_FILTER" in
+  moe)    build_args moe ;;
+  dense)  build_args dense ;;
+  both)   build_args dense; build_args moe ;;
+  all)    build_args dense; build_args moe ;;
+esac
 
-# Build health checks and log tail list
+# Build health checks and log tail list for selected servers
 HEALTH_CHECK=""
 LOG_FILES=""
-for name in dense moe; do
+case "$SERVER_FILTER" in
+  moe)    SERVERS="moe" ;;
+  dense)  SERVERS="dense" ;;
+  both|all) SERVERS="dense moe" ;;
+esac
+
+for name in $SERVERS; do
   upper=$(to_upper "$name")
   enabled_var="${upper}_ENABLED"
   eval "enabled=\${${enabled_var:-0}}"
@@ -239,7 +256,7 @@ log "Waiting for server(s) to be ready..."
 for i in $(seq 1 120); do
   if eval "$HEALTH_CHECK"; then
     log "Servers ready."
-    for name in dense moe; do
+    for name in $SERVERS; do
       upper=$(to_upper "$name")
       enabled_var="${upper}_ENABLED"
       eval "enabled=\${${enabled_var:-0}}"
