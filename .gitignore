@@ -20,3 +20,6 @@ venv/
 
 # MLX prompt cache
 prompt_cache/
+
+# Benchmark results
+benchmarks/

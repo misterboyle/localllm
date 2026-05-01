@@ -64,6 +64,33 @@ Downloaded from Hugging Face via `huggingface-cli`:
 
 Stored in `~/.localllm/models/`.
 
+## Benchmarking
+
+The MLX server ships with a benchmark script at `mlx-lm-turbo/benchmarks/server_benchmark.py`. Run it against a running server:
+
+```bash
+# Single-threaded (1 concurrent request)
+python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
+  --url http://localhost:30083/v1/chat/completions \
+  --api-key sk-local \
+  --model /Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
+  --max-tokens 256 \
+  --concurrency 1 \
+  --total-requests 5
+
+# Multi-threaded (4 concurrent requests)
+python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
+  --url http://localhost:30083/v1/chat/completions \
+  --api-key sk-local \
+  --model /Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
+  --max-tokens 256 \
+  --concurrency 4 \
+  --total-requests 20 \
+  --output results.json
+```
+
+Outputs: time-to-first-token, tokens/sec (per-request and aggregate), and a per-second throughput chart. Results can be saved as JSON for comparison.
+
 ## Historical Docs
 
 The repo contains detailed analysis from the prior llama.cpp era (KV cache mechanics, checkpoint behavior, memory profiling). Each document has a "Historical note" header explaining its relevance to the current MLX setup.
