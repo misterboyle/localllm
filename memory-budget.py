@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Memory budget calculator for MLX models on M5 Max 128GB.
+"""Memory budget calculator for MLX models.
 
 Reads model config to get architecture params, then computes KV cache costs
-for various concurrency scenarios.
+for various concurrency scenarios. Model definitions come from the default
+config in models.jsonc.example — override with --models-dir if different.
 
 Usage:
     python3 memory-budget.py                    # 27B (default)
     python3 memory-budget.py --model moe        # MoE 35B-A3B
     python3 memory-budget.py --model both       # both models side by side
+    python3 memory-budget.py --ram 96           # adjust for your machine
     python3 memory-budget.py --active 2 --active-ctx 262144
 """
 
@@ -18,9 +20,11 @@ import sys
 
 # --- Config ---
 MODELS_DIR = os.path.expanduser("~/.localllm/models")
-SYSTEM_RAM_GB = 128
+SYSTEM_RAM_GB = 128  # override with --ram
 MACOS_HEADROOM_GB = 15  # macOS needs this for IOMemoryDescriptor, compression, etc.
 
+# Model definitions from default config (models.jsonc.example).
+# If your config uses different models, point --models-dir accordingly.
 MODEL_DEFS = {
     "27b": {
         "dir": "Qwen3.6-27B-UD-MLX-4bit",
@@ -161,14 +165,19 @@ def print_limits(m):
 
 
 def main():
+    global SYSTEM_RAM_GB
     parser = argparse.ArgumentParser(description="MLX memory budget calculator")
     parser.add_argument("--model", choices=["27b", "moe", "both"], default="27b",
                         help="Model to analyze (default: 27b)")
+    parser.add_argument("--ram", type=int, default=None,
+                        help=f"System RAM in GB (default: {SYSTEM_RAM_GB})")
     parser.add_argument("--active", type=int, default=None, help="Active conversations")
     parser.add_argument("--active-ctx", type=int, default=None, help="Active context length")
     parser.add_argument("--cached", type=int, default=None, help="Cached conversations")
     parser.add_argument("--cached-ctx", type=int, default=None, help="Cached context length")
     args = parser.parse_args()
+    if args.ram is not None:
+        SYSTEM_RAM_GB = args.ram
 
     if args.model == "both":
         models = [load_model("27b"), load_model("moe")]

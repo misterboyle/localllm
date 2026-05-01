@@ -14,11 +14,29 @@ ps aux | grep mlx_lm.server | grep -v grep | awk '{printf "PID: %s, MEM%%: %.1f,
 # System memory
 vm_stat | head -1 | tee -a "$LOG"
 
-# Server health
-for port in 30090 30083; do
-  status=$(curl -sf "http://localhost:$port/health" 2>/dev/null || echo "down")
-  echo "Port $port: $status" | tee -a "$LOG"
-done
+# Server health — read ports from config
+CONF_FILE="$HOME/.localllm/models.jsonc"
+if [ -f "$CONF_FILE" ]; then
+  ports=$(python3 -c "
+import json, re
+raw = open('$CONF_FILE').read()
+raw = re.sub(r'//.*?$', '', raw, flags=re.MULTILINE)
+cfg = json.loads(raw)
+for name, srv in cfg.get('servers', {}).items():
+    if srv.get('enabled', False):
+        print(srv['port'])
+" 2>/dev/null || echo "")
+  if [ -n "$ports" ]; then
+    for port in $ports; do
+      status=$(curl -sf "http://localhost:$port/health" 2>/dev/null || echo "down")
+      echo "Port $port: $status" | tee -a "$LOG"
+    done
+  else
+    echo "No enabled servers in config" | tee -a "$LOG"
+  fi
+else
+  echo "Config not found at $CONF_FILE" | tee -a "$LOG"
+fi
 
 # Prompt cache disk usage
 echo "Prompt cache:" | tee -a "$LOG"

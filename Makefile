@@ -8,9 +8,32 @@ TURBOQUANT_DIR := $(HOME_DIR)/turboquant-mlx
 OPENCODE_CONFIG := $(HOME_DIR)/.config/opencode/opencode.jsonc
 PYTHON := python3.14
 
-.PHONY: all setup help deps models config start stop clean check
+.PHONY: all setup help deps models config start stop clean check lint test
 
 all: help
+
+lint:
+	@echo "=== Lint ==="
+	@command -v shellcheck > /dev/null 2>&1 || { echo "ERROR: shellcheck not found. Install via: brew install shellcheck"; exit 1; }
+	@shellcheck -e SC1090 -e SC1091 start-server.sh snapshot-memory.sh tests/*.sh
+	@python3 -m py_compile memory-budget.py && echo "Python syntax: OK"
+
+test:
+	@echo "=== Tests ==="
+	@fail=0; \
+	for t in tests/test-*.sh; do \
+		if [ -f "$$t" ]; then \
+			echo "Running $$t..."; \
+			if bash "$$t"; then \
+				echo "  PASS"; \
+			else \
+				echo "  FAIL"; \
+				fail=1; \
+			fi; \
+		fi; \
+	done; \
+	if [ "$$fail" -ne 0 ]; then echo "Some tests failed"; exit 1; fi
+	@echo "All tests passed."
 
 help:
 	@echo "localllm - setup and management"
@@ -23,6 +46,8 @@ help:
 	@echo "  make start       Start servers (delegates to start-server.sh)"
 	@echo "  make stop        Stop all servers"
 	@echo "  make check       Verify setup is complete"
+	@echo "  make lint        Lint shell scripts and Python syntax"
+	@echo "  make test        Run validation tests"
 	@echo "  make clean       Remove venv and downloaded models"
 	@echo ""
 	@echo "Model sizes: dense 6-bit ~28 GB, moe 4-bit ~20 GB"

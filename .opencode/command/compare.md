@@ -7,9 +7,13 @@ Run the same prompts through both models and compare outputs.
 
 ## Setup
 
-Make sure both servers are running:
-- MoE: `curl http://localhost:30083/health`
-- 27B: `curl http://localhost:30090/health`
+Read ports from `~/.localllm/models.jsonc`. Make sure both servers are running:
+
+```bash
+# Replace ports with values from models.jsonc
+curl http://localhost:<moe-port>/health
+curl http://localhost:<dense-port>/health
+```
 
 ## Procedure
 
@@ -22,16 +26,23 @@ Make sure both servers are running:
 
 ## Example
 
-```bash
-# MoE response
-curl -s http://localhost:30083/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"/Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit","messages":[{"role":"user","content":"Write a Python function to merge two sorted arrays"}],"max_tokens":512,"temperature":0.0}'
+Read model paths and ports from `~/.localllm/models.jsonc`:
 
-# 27B response
-curl -s http://localhost:30090/v1/chat/completions \
+```bash
+MOE_PORT=30083
+DENSE_PORT=30090
+MOE_MODEL=~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit
+DENSE_MODEL=~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit
+
+# MoE response
+curl -s "http://localhost:$MOE_PORT/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -d '{"model":"/Users/michael/.localllm/models/Qwen3.6-27B-UD-MLX-4bit","messages":[{"role":"user","content":"Write a Python function to merge two sorted arrays"}],"max_tokens":512,"temperature":0.0}'
+  -d "{\"model\":\"$MOE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a Python function to merge two sorted arrays\"}],\"max_tokens\":512,\"temperature\":0.0}"
+
+# Dense response
+curl -s "http://localhost:$DENSE_PORT/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d "{\"model\":\"$DENSE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a Python function to merge two sorted arrays\"}],\"max_tokens\":512,\"temperature\":0.0}"
 ```
 
 4. Save comparison to `benchmarks/comparison-<date>.md`

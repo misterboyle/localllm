@@ -3,7 +3,7 @@ description: Characterize MoE model performance and memory
 model: opencode/kimi-k2.5
 ---
 
-Run a full characterization of the MoE model: memory, speed, and quality.
+Run a full characterization of the MoE model: memory, speed, and quality. This determines whether the model is suitable as a compute engine for multi-agent factories.
 
 ## Steps
 
@@ -15,11 +15,15 @@ Run a full characterization of the MoE model: memory, speed, and quality.
    ```
 
 2. **Decode speed benchmarks**
+   Read port and model path from `~/.localllm/models.jsonc`:
    ```bash
+   PORT=30083  # from models.jsonc
+   MODEL=~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit  # from models.jsonc
+
    python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-     --url http://localhost:30083/v1/chat/completions \
+     --url "http://localhost:$PORT/v1/chat/completions" \
      --api-key sk-local \
-     --model /Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
+     --model "$MODEL" \
      --max-tokens 256 --concurrency 1 --total-requests 5
    ```
 
