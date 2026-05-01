@@ -1,79 +1,84 @@
-# Memory Budget Formula — Qwen3.6-27B Dense Server
+# Memory Budget Formula — M4 Max 48GB
 
-> **Historical note:** This formula was derived from llama.cpp testing. The MLX
-> server has different memory characteristics (no checkpoints, KV cache
-> quantization via turboquant-mlx, different concurrency model). Kept as
-> reference for understanding the migration.
-
-**Validated:** 2026-04-29, live testing, 2-slot config
-**Model:** Qwen3.6-27B-UD-Q6_K_XL
-**Server:** --kv-unified, --ctx-checkpoints 32, --cache-ram 65536
+**Model:** Qwen3.6-35B-A3B (MoE, 4-bit quantized)
+**Server:** mlx-lm-turbo (forked mlx_lm.server)
+**KV Cache:** TurboQuant K8+V2 (~20% savings vs fp16)
+**Prompt Cache:** Bounded by `--prompt-cache-bytes` (8 GB default on 48 GB machines)
 
 ---
 
-## The Formula
+## The Formula (MLX, MoE)
 
 ```
-RSS = FIXED + KV_FAULTED(active_tokens × 26B) + CACHE(cold conversations, ≤ cache-ram) + CHECKPOINTS(active_slots × count × 149 MiB) + OVERHEAD(~16 GB)
+RSS = WEIGHTS + BUFFERS + KV_ACTIVE + CACHE_EVICTED + OVERHEAD
 ```
 
 | Component | Cost | Variable? | Notes |
 |-----------|------|-----------|-------|
-| Fixed (weights Q6_K + compute buffers) | ~35 GB | No | Per process, independent of slots |
-| KV buffer (faulted) | active_tokens × 26 bytes | Yes | Only faults pages for active tokens, bounded by `-c` |
-| Prompt cache | Sum of cold conversation sizes | Yes | Capped by `--cache-ram`, serializes KV + checkpoints |
-| In-slot checkpoints | slots × count × 149 MiB | Yes | Each checkpoint is 149 MiB regardless of token count |
-| Overhead | ~16 GB | No | CUDA allocations, macOS memory management, page alignment |
+| Weights (35B-A3B, 4-bit) | ~12 GB | No | All experts loaded, 3B active per step |
+| Compute buffers | ~3-5 GB | No | Activation buffers, temp allocations |
+| KV (active tokens) | ~26 bytes/token | Yes | Only for active sessions, quantized K8+V2 |
+| Prompt cache (evicted) | ≤ 8 GB | Yes | Capped by `--prompt-cache-bytes` |
+| Overhead | ~4-6 GB | No | Python, macOS memory management |
 
 ---
 
-## Architecture A vs B Budget
+## 48GB Budget Breakdown
 
-### Architecture A: 27B + MoE (2 processes)
-
-| Component | 27B | MoE | Total |
-|-----------|-----|-----|-------|
-| Fixed (weights + buffers) | 35 GB | 35 GB | **70 GB** |
-| KV faulted (peak) | 8 GB (130K tokens) | 1.5 GB (10K tokens) | 9.5 GB |
-| In-slot checkpoints (1 slot each) | 4.7 GB | 4.7 GB | 9.4 GB |
-| Prompt cache (8 workers) | 2 GB | 10 GB | 12 GB |
-| Overhead | 16 GB | 16 GB | 32 GB |
-| **Total peak** | | | **~133 GB** |
-
-### Architecture B: 27B × 2 slots (1 process)
-
-| Component | Value |
-|-----------|-------|
-| Fixed (weights + buffers) | **35 GB** |
-| KV faulted (both slots) | 9.5 GB |
-| In-slot checkpoints (2 slots) | 4.7 GB |
-| Prompt cache (8 workers) | 10 GB |
-| Overhead | 16 GB |
-| **Total peak** | **~75 GB** |
+| Component | Size | % of 48GB |
+|-----------|------|-----------|
+| Weights + buffers | ~17 GB | 35% |
+| macOS system + display | ~6 GB | 13% |
+| Prompt cache cap | 8 GB | 17% |
+| KV cache (active) | ~5-8 GB | 12-16% |
+| Headroom | ~2-4 GB | 5-8% |
+| **Total** | **~46 GB** | **~96%** |
 
 ---
 
-## Key Findings
+## Tuning for Memory Pressure
 
-1. **Checkpoints are the hidden cost** — 32 × 149 MiB = 4.7 GB per active slot, plus serialized to cache (70-75% of cache entry size). With `--ctx-checkpoints 0`, save ~9 GB (2 slots).
+If you see OOM or swap usage:
 
-2. **Prompt cache grows fast** — 3 conversations already use 14 GB (checkpoint serialization dominates). 8 worker conversations ≈ 10 GB with `--ctx-checkpoints 0`.
+1. **Reduce `promptCacheBytes`** — e.g. from 8 GB to 4 GB
+2. **Reduce `decodeConcurrency`** — e.g. from 24 to 16
+3. **Reduce `promptCacheSize`** — e.g. from 20 to 12
+4. **Disable the dense server** if enabled (saves ~28 GB)
 
-3. **Architecture A is tight** — 133 GB peak vs 128 GB limit. Need `--ctx-checkpoints 0` to reduce by ~9 GB → 124 GB. Or reduce worker context.
+If you have headroom and want more cache:
 
-4. **Architecture B has headroom** — 75 GB vs 128 GB = 53 GB headroom. Comfortable with `--ctx-checkpoints 0` → 66 GB.
-
----
-
-## Optimization: `--ctx-checkpoints 0`
-
-With high LCP (>0.8), the prompt cache handles everything. In-slot checkpoints provide marginal value. Setting `--ctx-checkpoints 0`:
-
-| Architecture | Before | After | Saved |
-|--------------|--------|-------|-------|
-| A (27B + MoE) | 133 GB | 124 GB | 9 GB |
-| B (27B × 2) | 75 GB | 66 GB | 9 GB |
+1. **Increase `promptCacheBytes`** — e.g. to 12 GB (only on machines with >48 GB RAM)
+2. **Increase `decodeConcurrency`** — e.g. to 32
 
 ---
 
-*Last updated: 2026-04-29*
+## Multi-Server Considerations
+
+Running both dense (27B) and MoE (35B-A3B) simultaneously:
+
+| Component | Dense (27B) | MoE (35B-A3B) | Total |
+|-----------|-------------|---------------|-------|
+| Weights | ~14 GB | ~12 GB | 26 GB |
+| Buffers | ~4 GB | ~4 GB | 8 GB |
+| Cache cap | 8 GB | 8 GB | 16 GB |
+| **Total** | **~26 GB** | **~24 GB** | **50 GB** |
+
+Running both servers on 48GB is tight — reduce cache caps to 6-8 GB each.
+
+*Note: Both servers are disabled/enabled independently in `models.jsonc`.*
+
+## Machine-Specific Defaults
+
+| Machine | RAM | `promptCacheBytes` (each server) | Concurrency |
+|---------|-----|----------------------------------|-------------|
+| M4 Max | 48 GB | 8 GB (`8589934592`) | 24/4/1024 |
+| M5 Max | 96 GB | 24 GB (`25769803776`) | 32/8/2048 |
+| M5 Max | 128 GB | 32 GB (`34359738368`) | 32/8/2048 |
+
+To override, set in `models.jsonc` under `defaults` or per-server:
+
+```json
+"defaults": {
+  "promptCacheBytes": 34359738368
+}
+```

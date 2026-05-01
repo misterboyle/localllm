@@ -65,6 +65,7 @@ p('CONF_KV_QUANT', f'{d[\"kvQuant\"][0]},{d[\"kvQuant\"][1]}')
 p('CONF_KV_QUANT_START', d['kvQuantStart'])
 p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
 p('CONF_PROMPT_CACHE_DISK_SIZE', d['promptCacheDiskSize'])
+p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', '8589934592'))
 p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
 p('CONF_PREFILL_CONCURRENCY', d['prefillConcurrency'])
 p('CONF_PREFILL_STEP_SIZE', d['prefillStepSize'])
@@ -80,6 +81,7 @@ for name, srv in cfg.get('servers', {}).items():
     p(f'{n}_LOG', srv['logFile'])
     for key, jkey in [('kvQuant', 'KV_QUANT'), ('kvQuantStart', 'KV_QUANT_START'),
                        ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
+                       ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
                        ('decodeConcurrency', 'DECODE_CONCURRENCY'),
                        ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
                        ('prefillStepSize', 'PREFILL_STEP_SIZE'),
@@ -151,7 +153,7 @@ build_args() {
   local upper
   upper=$(to_upper "$name")
 
-  local model kv qstart csize dconc pconc pstep temp maxtok chat_args port logf
+  local model kv qstart csize cbytes dconc pconc pstep temp maxtok chat_args port logf
   model=$(resolve "${upper}_MODEL" "error")
   # Resolve model to local path if it exists under modelDir
   if [ -d "$CONF_MODEL_DIR/$model" ]; then
@@ -165,6 +167,7 @@ build_args() {
   kv=$(resolve "${upper}_KV_QUANT" "CONF_KV_QUANT")
   qstart=$(resolve "${upper}_KV_QUANT_START" "CONF_KV_QUANT_START")
   csize=$(resolve "${upper}_PROMPT_CACHE_SIZE" "CONF_PROMPT_CACHE_SIZE")
+  cbytes=$(resolve "${upper}_PROMPT_CACHE_BYTES" "CONF_PROMPT_CACHE_BYTES")
   dconc=$(resolve "${upper}_DECODE_CONCURRENCY" "CONF_DECODE_CONCURRENCY")
   pconc=$(resolve "${upper}_PREFILL_CONCURRENCY" "CONF_PREFILL_CONCURRENCY")
   pstep=$(resolve "${upper}_PREFILL_STEP_SIZE" "CONF_PREFILL_STEP_SIZE")
@@ -180,24 +183,30 @@ build_args() {
     return 0
   fi
 
-  log "Starting $name on port $port (model=$model, kv_quant=$kv, cache=$csize, decode=$dconc)..."
+  log "Starting $name on port $port (model=$model, kv_quant=$kv, cache=$csize, cbytes=${cbytes:-unlimited}, decode=$dconc)..."
 
-  nohup mlx_lm.server \
-    --model "$model" \
-    --port "$port" \
-    --host 127.0.0.1 \
-    --kv-cache-quantization "$kv" \
-    --quantized-kv-start "$qstart" \
-    --prompt-cache-size "$csize" \
-    --prompt-cache-dir "$CACHE_DIR" \
-    --prompt-cache-disk-size "$CONF_PROMPT_CACHE_DISK_SIZE" \
-    --decode-concurrency "$dconc" \
-    --prompt-concurrency "$pconc" \
-    --prefill-step-size "$pstep" \
-    --temp "$temp" \
-    --max-tokens "$maxtok" \
-    --chat-template-args "$chat_args" \
-    >> "$logf" 2>&1 &
+  local server_args=(
+    --model "$model"
+    --port "$port"
+    --host 127.0.0.1
+    --kv-cache-quantization "$kv"
+    --quantized-kv-start "$qstart"
+    --prompt-cache-size "$csize"
+    --prompt-cache-dir "$CACHE_DIR"
+    --prompt-cache-disk-size "$CONF_PROMPT_CACHE_DISK_SIZE"
+    --decode-concurrency "$dconc"
+    --prompt-concurrency "$pconc"
+    --prefill-step-size "$pstep"
+    --temp "$temp"
+    --max-tokens "$maxtok"
+    --chat-template-args "$chat_args"
+  )
+
+  if [ -n "$cbytes" ]; then
+    server_args+=(--prompt-cache-bytes "$cbytes")
+  fi
+
+  nohup mlx_lm.server "${server_args[@]}" >> "$logf" 2>&1 &
 
   echo $! > "$PID_DIR/${name}.pid"
   log "$name PID: $(cat "$PID_DIR/${name}.pid")"

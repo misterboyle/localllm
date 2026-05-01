@@ -19,10 +19,17 @@
     // Prompt cache: max disk entries (survives restart)
     "promptCacheDiskSize": 100,
 
+    // Prompt cache: hard cap on total RAM usage for KV caches in bytes.
+    // Prevents OOM when a single session or combined sessions exceed
+    // available memory. 8GB = 8 * 1024^3 = 8589934592 bytes.
+    // Adjust based on available RAM: 48GB machine → 8GB, 96GB → 24GB, 128GB → 32GB
+    "promptCacheBytes": 8589934592,
+
     // Parallel decode slots and prefill workers
-    "decodeConcurrency": 32,
-    "prefillConcurrency": 8,
-    "prefillStepSize": 2048,
+    // Tuned for 48GB machine — reduce if you see memory pressure
+    "decodeConcurrency": 24,
+    "prefillConcurrency": 4,
+    "prefillStepSize": 1024,
 
     // Sampling defaults
     "temperature": 0.0,
@@ -55,6 +62,7 @@
       // "kvQuant": [8, 4],
       // "promptCacheSize": 30,
       // "decodeConcurrency": 16,
+      // "promptCacheBytes": 8589934592,  // 8GB cap — lower if OOM
     }
   },
 
