@@ -42,13 +42,16 @@ curl http://localhost:<dense-port>/health
 Run benchmarks against a live server. Read port and model path from `~/.localllm/models.jsonc`:
 
 ```bash
-# Example with default config values
-python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
+# mlx-lm-turbo is a SIBLING repo at ~/mlx-lm-turbo/ (NOT a subdirectory of this repo)
+# Use absolute path or ~/mlx-lm-turbo/ — relative paths from this CWD will fail
+~/mlx-lm-turbo/venv/bin/python3 ~/mlx-lm-turbo/benchmarks/server_benchmark.py \
   --url http://localhost:30083/v1/chat/completions \
   --api-key sk-local \
   --model ~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
   --max-tokens 256 --concurrency 1 --total-requests 5
 ```
+
+**Footgun:** `mlx-lm-turbo/` is a sibling repo at `/Users/michael/mlx-lm-turbo/`, NOT a subdirectory of this repo. Glob searches from this CWD (`/Users/michael/localllm/`) will not find it. Always use absolute paths or `~/mlx-lm-turbo/`.
 
 ## Memory Budget (MoE, default config on 128GB M5 Max)
 
@@ -70,17 +73,34 @@ These are reference numbers for the default setup. Actual values depend on model
 ## Python
 
 - Scripts in this repo (`memory-budget.py`): use system `python3` (stdlib only)
-- Scripts in `mlx-lm-turbo/` (benchmarks, server): use `mlx-lm-turbo/venv/bin/python3`
+- Scripts in `mlx-lm-turbo/` (benchmarks, server): use `~/mlx-lm-turbo/venv/bin/python3`
 - **Never** use system `python3` for mlx-lm-turbo scripts — they require aiohttp, numpy, and other venv packages
 
 ## Key Files
 
 - `~/.localllm/models.jsonc` — server config (enable/disable, ports, concurrency)
-- `~/.config/opencode/opencode.jsonc` — opencode client config
-- `mlx-lm-turbo/` — MLX server fork with TurboQuant support
-- `turboquant-mlx/` — KV cache compression library
+- `benchmarks/` — benchmark results (bench-*.json) and tools
+- `benchmarks/compare.py` — comparison tool for benchmark results
 - `memory-budget.py` — memory calculator for both models
-- `benchmarks/server_benchmark.py` — server benchmark tool
+- `~/mlx-lm-turbo/` (SIBLING REPO) — MLX server fork with TurboQuant support
+- `~/mlx-lm-turbo/benchmarks/server_benchmark.py` — server benchmark tool
+- `~/turboquant-mlx/` (SIBLING REPO) — KV cache compression library
+
+## Repo Layout
+
+This repo (`/Users/michael/localllm/`) is the configuration and analysis repo. The compute tools live in sibling repos:
+
+| Repo | Path | Purpose |
+|------|------|---------|
+| localllm | `/Users/michael/localllm/` | Config, benchmarks, analysis |
+| mlx-lm-turbo | `/Users/michael/mlx-lm-turbo/` | Server fork, benchmark scripts |
+| turboquant-mlx | `/Users/michael/turboquant-mlx/` | KV cache compression |
+
+**Footgun:** Glob searches from this CWD will NOT find files in sibling repos. Use absolute paths.
+
+## Skills
+
+Skills are LOCAL to this repo at `.opencode/skills/` (NOT global config). Do not modify `~/.opencode/` — that's the global opencode directory.
 
 ## Historical Docs
 
