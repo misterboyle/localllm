@@ -14,22 +14,25 @@
     "kvQuantStart": 1024,
 
     // Prompt cache: max KV caches held in RAM
-    "promptCacheSize": 20,
+    "promptCacheSize": 12,
+
+    // Prompt cache: hard byte limit for cached KV.
+    // With K8,V2 quantization: ~22 KB/token cached. 12 convos @ 75K avg = ~20 GB.
+    // Prevents cache from eating all memory headroom.
+    // Machine-specific: 48GB → 8GB (8589934592), 96GB → 24GB, 128GB → 20GB
+    "promptCacheBytes": 21474836480,
 
     // Prompt cache: max disk entries (survives restart)
     "promptCacheDiskSize": 100,
 
-    // Prompt cache: hard cap on total RAM usage for KV caches in bytes.
-    // Prevents OOM when a single session or combined sessions exceed
-    // available memory. 8GB = 8 * 1024^3 = 8589934592 bytes.
-    // Adjust based on available RAM: 48GB machine → 8GB, 96GB → 24GB, 128GB → 32GB
-    "promptCacheBytes": 8589934592,
-
     // Parallel decode slots and prefill workers
-    // Tuned for 48GB machine — reduce if you see memory pressure
-    "decodeConcurrency": 24,
-    "prefillConcurrency": 4,
-    "prefillStepSize": 1024,
+    // 6 is the memory-safe limit for 27B on 128GB M5 Max.
+    // Active KV is fp16 (64 KB/token), 6 @ 100K avg = 39 GB active KV.
+    // See memory-budget.py for full analysis.
+    // For 48GB machines: decodeConcurrency=24, prefillConcurrency=4, prefillStepSize=1024
+    "decodeConcurrency": 6,
+    "prefillConcurrency": 8,
+    "prefillStepSize": 2048,
 
     // Sampling defaults
     "temperature": 0.0,

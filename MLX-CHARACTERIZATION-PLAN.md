@@ -87,12 +87,20 @@ Desired architectures, in order:
 
 **Question:** Can a single 27B process handle 3-4 concurrent conversations at acceptable speed?
 
+**Memory characterization (completed 2026-05-01):**
+- Active KV is fp16 (64 KB/token), cached KV is K8,V2 (22 KB/token)
+- 27B has 16 full-attn layers out of 64 (48 are linear-attn, no KV cache)
+- Fixed costs: 44 GB (31 GB weights + 8 GB compute + 5 GB overhead)
+- KV budget: 69 GB of 128 GB system
+- Max 3 conversations @ 262K context, or 6 @ 100K average
+- See `memory-budget.py` for full analysis
+
 **Setup:**
 ```bash
 mlx_lm.server --model unsloth/Qwen3.6-27B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 \
-  --decode-concurrency 32 --prompt-concurrency 8 \
-  --prompt-cache-size 10 --prompt-cache-bytes 17179869184
+  --kv-cache-quantization 8,2 \
+  --decode-concurrency 6 --prompt-concurrency 8 \
+  --prompt-cache-size 12 --prompt-cache-bytes 21474836480
 ```
 
 **Procedure:**
@@ -115,11 +123,19 @@ mlx_lm.server --model unsloth/Qwen3.6-27B-UD-MLX-4bit \
 
 **Question:** Is MoE smart enough for opencode workflows (reasoning, debugging, code generation)?
 
+**Memory characterization (completed 2026-05-01):**
+- MoE KV is 3.2x smaller than 27B (20 KB/token active vs 64 KB)
+- 10 full-attn layers out of 40 (30 are linear-attn)
+- Fixed costs: 39 GB (26 GB weights + 8 GB compute + 5 GB overhead)
+- KV budget: 74 GB, can handle 13 conversations @ 262K
+- Much more headroom, decode speed is the limiting factor
+
 **Setup:**
 ```bash
 mlx_lm.server --model unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 \
-  --decode-concurrency 32 --prompt-concurrency 8
+  --kv-cache-quantization 8,2 \
+  --decode-concurrency 12 --prompt-concurrency 8 \
+  --prompt-cache-size 12 --prompt-cache-bytes 21474836480
 ```
 
 **Procedure:**
@@ -198,22 +214,23 @@ If cache misses are frequent, test with opencode compaction disabled:
 ## Server Configurations
 
 ```bash
-# 27B (Test 1)
+# 27B (Test 1) — decode_concurrency=6, 69 GB KV budget
 mlx_lm.server --model unsloth/Qwen3.6-27B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 \
-  --decode-concurrency 32 --prompt-concurrency 8 \
-  --prompt-cache-size 10 --prompt-cache-bytes 17179869184
+  --kv-cache-quantization 8,2 \
+  --decode-concurrency 6 --prompt-concurrency 8 \
+  --prompt-cache-size 12 --prompt-cache-bytes 21474836480
 
-# MoE (Test 2)
+# MoE (Test 2) — decode_concurrency=12, 74 GB KV budget
 mlx_lm.server --model unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 \
-  --decode-concurrency 32 --prompt-concurrency 8
+  --kv-cache-quantization 8,2 \
+  --decode-concurrency 12 --prompt-concurrency 8 \
+  --prompt-cache-size 12 --prompt-cache-bytes 21474836480
 
-# Both (Test 3)
+# Both (Test 3) — combined ~83 GB fixed, tight but feasible
 mlx_lm.server --model unsloth/Qwen3.6-27B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 --port 8000 &
+  --kv-cache-quantization 8,2 --port 8000 &
 mlx_lm.server --model unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --kv-cache-quantization 8,4 --port 8001 &
+  --kv-cache-quantization 8,2 --port 8001 &
 ```
 
 ---

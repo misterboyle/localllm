@@ -64,8 +64,8 @@ d = v('defaults', {})
 p('CONF_KV_QUANT', f'{d[\"kvQuant\"][0]},{d[\"kvQuant\"][1]}')
 p('CONF_KV_QUANT_START', d['kvQuantStart'])
 p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
+p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', ''))
 p('CONF_PROMPT_CACHE_DISK_SIZE', d['promptCacheDiskSize'])
-p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', '8589934592'))
 p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
 p('CONF_PREFILL_CONCURRENCY', d['prefillConcurrency'])
 p('CONF_PREFILL_STEP_SIZE', d['prefillStepSize'])
@@ -80,10 +80,10 @@ for name, srv in cfg.get('servers', {}).items():
     p(f'{n}_PORT', srv['port'])
     p(f'{n}_LOG', srv['logFile'])
     for key, jkey in [('kvQuant', 'KV_QUANT'), ('kvQuantStart', 'KV_QUANT_START'),
-                       ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
-                       ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
-                       ('decodeConcurrency', 'DECODE_CONCURRENCY'),
-                       ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
+                        ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
+                        ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
+                        ('decodeConcurrency', 'DECODE_CONCURRENCY'),
+                        ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
                        ('prefillStepSize', 'PREFILL_STEP_SIZE'),
                        ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS')]:
         if key in srv:
