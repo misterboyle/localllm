@@ -8,7 +8,7 @@ TURBOQUANT_DIR := $(HOME_DIR)/turboquant-mlx
 OPENCODE_CONFIG := $(HOME_DIR)/.config/opencode/opencode.jsonc
 PYTHON := python3.14
 
-.PHONY: all setup help deps models config start stop clean check lint test
+.PHONY: all setup help deps models config start stop clean check lint test moe dense both
 
 all: help
 
@@ -117,7 +117,9 @@ config:
 	fi
 
 start:
-	@./start-server.sh
+	@./start-server.sh $(filter-out $@,$(MAKECMDGOALS))
+%:
+	@
 
 stop:
 	@for name in dense moe; do \

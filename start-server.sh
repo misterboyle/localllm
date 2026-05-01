@@ -205,8 +205,13 @@ build_args() {
   chat_args="$CONF_CHAT_TEMPLATE_ARGS"
   logf="$CONF_LOG_DIR/$(resolve "${upper}_LOG" "${name}.log")"
 
-  local enabled_var="${upper}_ENABLED"
-  eval "local enabled=\${${enabled_var:-0}}"
+  # When SERVER_FILTER is explicit (moe/dense/both/all), override enabled flag
+  if [ -n "$SERVER_FILTER" ]; then
+    local enabled=1
+  else
+    local enabled_var="${upper}_ENABLED"
+    eval "local enabled=\${${enabled_var:-0}}"
+  fi
 
   if [ "$enabled" != "1" ]; then
     return 0
@@ -261,9 +266,13 @@ esac
 
 for name in $SERVERS; do
   upper=$(to_upper "$name")
-  enabled_var="${upper}_ENABLED"
-  eval "enabled=\${${enabled_var:-0}}"
-  [ "$enabled" != "1" ] && continue
+
+  # When SERVER_FILTER is explicit, don't skip disabled servers
+  if [ -z "$SERVER_FILTER" ]; then
+    enabled_var="${upper}_ENABLED"
+    eval "enabled=\${${enabled_var:-0}}"
+    [ "$enabled" != "1" ] && continue
+  fi
 
   port_var="${upper}_PORT"
   eval "port=\${${port_var}}"
@@ -281,9 +290,11 @@ for i in $(seq 1 120); do
     log "Servers ready."
     for name in $SERVERS; do
       upper=$(to_upper "$name")
-      enabled_var="${upper}_ENABLED"
-      eval "enabled=\${${enabled_var:-0}}"
-      [ "$enabled" != "1" ] && continue
+      if [ -z "$SERVER_FILTER" ]; then
+        enabled_var="${upper}_ENABLED"
+        eval "enabled=\${${enabled_var:-0}}"
+        [ "$enabled" != "1" ] && continue
+      fi
       port_var="${upper}_PORT"
       eval "port=\${${port_var}}"
       log "  $(to_upper "$name"): http://localhost:$port/v1/chat/completions"
