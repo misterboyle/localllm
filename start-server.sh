@@ -71,11 +71,9 @@ log_dir = expand(v('logDir', home + '/.localllm'))
 model_dir = expand(v('modelDir', home + '/.localllm/models'))
 
 d = v('defaults', {})
-p('CONF_KV_QUANT', f'{d[\"kvQuant\"][0]},{d[\"kvQuant\"][1]}')
-p('CONF_KV_QUANT_START', d['kvQuantStart'])
+p('CONF_TURBO_KV_BITS', d.get('turboKvBits', ''))
 p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
 p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', ''))
-p('CONF_PROMPT_CACHE_DISK_SIZE', d['promptCacheDiskSize'])
 p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
 p('CONF_PREFILL_CONCURRENCY', d['prefillConcurrency'])
 p('CONF_PREFILL_STEP_SIZE', d['prefillStepSize'])
@@ -89,7 +87,7 @@ for name, srv in cfg.get('servers', {}).items():
     p(f'{n}_MODEL', srv['model'])
     p(f'{n}_PORT', srv['port'])
     p(f'{n}_LOG', srv['logFile'])
-    for key, jkey in [('kvQuant', 'KV_QUANT'), ('kvQuantStart', 'KV_QUANT_START'),
+    for key, jkey in [('turboKvBits', 'TURBO_KV_BITS'),
                         ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
                         ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
                         ('decodeConcurrency', 'DECODE_CONCURRENCY'),
@@ -97,10 +95,7 @@ for name, srv in cfg.get('servers', {}).items():
                        ('prefillStepSize', 'PREFILL_STEP_SIZE'),
                        ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS')]:
         if key in srv:
-            val = srv[key]
-            if key == 'kvQuant':
-                val = f'{val[0]},{val[1]}'
-            p(f'{n}_{jkey}', val)
+            p(f'{n}_{jkey}', srv[key])
 
 p('CONF_PID_DIR', pid_dir)
 p('CONF_CACHE_DIR', cache_dir)
@@ -182,7 +177,7 @@ build_args() {
   local upper
   upper=$(to_upper "$name")
 
-  local model kv qstart csize cbytes dconc pconc pstep temp maxtok chat_args port logf
+  local model tkv csize cbytes dconc pconc pstep temp maxtok chat_args port logf
   model=$(resolve "${upper}_MODEL" "error")
   # Resolve model to local path if it exists under modelDir
   if [ -d "$CONF_MODEL_DIR/$model" ]; then
@@ -193,8 +188,7 @@ build_args() {
     model="$CONF_MODEL_DIR/${model#*/}"
   fi
   port=$(resolve "${upper}_PORT" "error")
-  kv=$(resolve "${upper}_KV_QUANT" "CONF_KV_QUANT")
-  qstart=$(resolve "${upper}_KV_QUANT_START" "CONF_KV_QUANT_START")
+  tkv=$(resolve "${upper}_TURBO_KV_BITS" "CONF_TURBO_KV_BITS")
   csize=$(resolve "${upper}_PROMPT_CACHE_SIZE" "CONF_PROMPT_CACHE_SIZE")
   cbytes=$(resolve "${upper}_PROMPT_CACHE_BYTES" "CONF_PROMPT_CACHE_BYTES")
   dconc=$(resolve "${upper}_DECODE_CONCURRENCY" "CONF_DECODE_CONCURRENCY")
@@ -217,17 +211,13 @@ build_args() {
     return 0
   fi
 
-  log "Starting $name on port $port (model=$model, kv_quant=$kv, cache=$csize, cbytes=${cbytes:-unlimited}, decode=$dconc)..."
+  log "Starting $name on port $port (model=$model, turbo_kv_bits=${tkv:-off}, cache=$csize, cbytes=${cbytes:-unlimited}, decode=$dconc)..."
 
   local server_args=(
     --model "$model"
     --port "$port"
     --host 127.0.0.1
-    --kv-cache-quantization "$kv"
-    --quantized-kv-start "$qstart"
     --prompt-cache-size "$csize"
-    --prompt-cache-dir "$CACHE_DIR"
-    --prompt-cache-disk-size "$CONF_PROMPT_CACHE_DISK_SIZE"
     --decode-concurrency "$dconc"
     --prompt-concurrency "$pconc"
     --prefill-step-size "$pstep"
@@ -238,6 +228,10 @@ build_args() {
 
   if [ -n "$cbytes" ]; then
     server_args+=(--prompt-cache-bytes "$cbytes")
+  fi
+
+  if [ -n "$tkv" ]; then
+    server_args+=(--turbo-kv-bits "$tkv")
   fi
 
   nohup mlx_lm.server "${server_args[@]}" >> "$logf" 2>&1 &
