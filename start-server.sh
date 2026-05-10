@@ -246,7 +246,7 @@ build_args() {
     server_args+=(--log-level "$log_level")
   fi
 
-  nohup mlx_lm.server "${server_args[@]}" >> "$logf" 2>&1 &
+  nohup python3 -m mlx_lm server "${server_args[@]}" >> "$logf" 2>&1 &
 
   echo $! > "$PID_DIR/${name}.pid"
   log "$name PID: $(cat "$PID_DIR/${name}.pid")"
