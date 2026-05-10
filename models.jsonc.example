@@ -52,7 +52,8 @@
       "enabled": true,
       "model": "Qwen3.6-35B-A3B-UD-MLX-4bit",
       "port": 30083,
-      "logFile": "moe.log"
+      "logFile": "moe.log",
+      // "logLevel": "DEBUG",
       // Override per-server as needed, e.g.:
       // "turboKvBits": 4,
       // "promptCacheSize": 30,

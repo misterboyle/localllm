@@ -92,8 +92,9 @@ for name, srv in cfg.get('servers', {}).items():
                         ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
                         ('decodeConcurrency', 'DECODE_CONCURRENCY'),
                         ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
-                       ('prefillStepSize', 'PREFILL_STEP_SIZE'),
-                       ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS')]:
+                        ('prefillStepSize', 'PREFILL_STEP_SIZE'),
+                        ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS'),
+                        ('logLevel', 'LOG_LEVEL')]:
         if key in srv:
             p(f'{n}_{jkey}', srv[key])
 
@@ -151,8 +152,12 @@ resolve() {
   eval "local val=\${${var}:-}"
   if [ -n "$val" ]; then
     echo "$val"
-  else
-    eval "echo \${${default_var}}"
+  elif [ -n "$default_var" ]; then
+    # Variable references start with CONF_, literals like "error" are returned as-is
+    case "$default_var" in
+      CONF_*) eval "echo \${${default_var}}" ;;
+      *) echo "$default_var" ;;
+    esac
   fi
 }
 
@@ -177,7 +182,7 @@ build_args() {
   local upper
   upper=$(to_upper "$name")
 
-  local model tkv csize cbytes dconc pconc pstep temp maxtok chat_args port logf
+  local model tkv csize cbytes dconc pconc pstep temp maxtok chat_args log_level port logf
   model=$(resolve "${upper}_MODEL" "error")
   # Resolve model to local path if it exists under modelDir
   if [ -d "$CONF_MODEL_DIR/$model" ]; then
@@ -196,6 +201,7 @@ build_args() {
   pstep=$(resolve "${upper}_PREFILL_STEP_SIZE" "CONF_PREFILL_STEP_SIZE")
   temp=$(resolve "${upper}_TEMP" "CONF_TEMP")
   maxtok=$(resolve "${upper}_MAX_TOKENS" "CONF_MAX_TOKENS")
+  log_level=$(resolve "${upper}_LOG_LEVEL" "")
   chat_args="$CONF_CHAT_TEMPLATE_ARGS"
   logf="$CONF_LOG_DIR/$(resolve "${upper}_LOG" "${name}.log")"
 
@@ -232,6 +238,10 @@ build_args() {
 
   if [ -n "$tkv" ]; then
     server_args+=(--turbo-kv-bits "$tkv")
+  fi
+
+  if [ -n "$log_level" ]; then
+    server_args+=(--log-level "$log_level")
   fi
 
   nohup mlx_lm.server "${server_args[@]}" >> "$logf" 2>&1 &
