@@ -63,6 +63,8 @@ def expand(s):
     return s.replace('\$HOME', home) if isinstance(s, str) else s
 
 def p(k, val):
+    if val is None:
+        val = ''
     print(f'{k}={shlex.quote(str(val))}')
 
 pid_dir = expand(v('pidDir', home + '/.localllm/pids'))
@@ -244,7 +246,7 @@ build_args() {
     server_args+=(--log-level "$log_level")
   fi
 
-  nohup python3 -m mlx_lm server "${server_args[@]}" >> "$logf" 2>&1 &
+  nohup mlx_lm.server "${server_args[@]}" >> "$logf" 2>&1 &
 
   echo $! > "$PID_DIR/${name}.pid"
   log "$name PID: $(cat "$PID_DIR/${name}.pid")"
