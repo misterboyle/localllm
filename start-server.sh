@@ -74,6 +74,10 @@ model_dir = expand(v('modelDir', home + '/.localllm/models'))
 
 d = v('defaults', {})
 p('CONF_TURBO_KV_BITS', d.get('turboKvBits', ''))
+p('CONF_KV_CACHE_QUANTIZATION', d.get('kvCacheQuantization', ''))
+p('CONF_KV_GROUP_SIZE', d.get('kvGroupSize', ''))
+p('CONF_QUANTIZED_KV_START', d.get('quantizedKvStart', ''))
+p('CONF_KV_CACHE_QUANTIZE_AFTER_PREFILL', d.get('kvCacheQuantizeAfterPrefill', ''))
 p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
 p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', ''))
 p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
@@ -184,7 +188,7 @@ build_args() {
   local upper
   upper=$(to_upper "$name")
 
-  local model tkv csize cbytes dconc pconc pstep temp maxtok chat_args log_level port logf
+  local model tkv kv_quant kv_group kv_start kv_after_prefill csize cbytes dconc pconc pstep temp maxtok chat_args log_level port logf
   model=$(resolve "${upper}_MODEL" "error")
   # Resolve model to local path if it exists under modelDir
   if [ -d "$CONF_MODEL_DIR/$model" ]; then
@@ -196,6 +200,10 @@ build_args() {
   fi
   port=$(resolve "${upper}_PORT" "error")
   tkv=$(resolve "${upper}_TURBO_KV_BITS" "CONF_TURBO_KV_BITS")
+  kv_quant=$(resolve "${upper}_KV_CACHE_QUANTIZATION" "CONF_KV_CACHE_QUANTIZATION")
+  kv_group=$(resolve "${upper}_KV_GROUP_SIZE" "CONF_KV_GROUP_SIZE")
+  kv_start=$(resolve "${upper}_QUANTIZED_KV_START" "CONF_QUANTIZED_KV_START")
+  kv_after_prefill=$(resolve "${upper}_KV_CACHE_QUANTIZE_AFTER_PREFILL" "CONF_KV_CACHE_QUANTIZE_AFTER_PREFILL")
   csize=$(resolve "${upper}_PROMPT_CACHE_SIZE" "CONF_PROMPT_CACHE_SIZE")
   cbytes=$(resolve "${upper}_PROMPT_CACHE_BYTES" "CONF_PROMPT_CACHE_BYTES")
   dconc=$(resolve "${upper}_DECODE_CONCURRENCY" "CONF_DECODE_CONCURRENCY")
@@ -240,6 +248,22 @@ build_args() {
 
   if [ -n "$tkv" ]; then
     server_args+=(--turbo-kv-bits "$tkv")
+  fi
+
+  if [ -n "$kv_quant" ]; then
+    server_args+=(--kv-cache-quantization "$kv_quant")
+  fi
+
+  if [ -n "$kv_group" ]; then
+    server_args+=(--kv-group-size "$kv_group")
+  fi
+
+  if [ -n "$kv_start" ]; then
+    server_args+=(--quantized-kv-start "$kv_start")
+  fi
+
+  if [ "$kv_after_prefill" = "True" ]; then
+    server_args+=(--kv-cache-quantize-after-prefill)
   fi
 
   if [ -n "$log_level" ]; then
