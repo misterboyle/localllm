@@ -98,6 +98,36 @@ Code conventions for shell scripts, Python, and configuration files.
 - `make config` copies examples to user locations, skips if exists
 - Examples should be complete and functional as-is
 
+### KV Cache Quantization Patterns
+
+The MLX server supports two KV cache compression strategies. Agents should know the config patterns:
+
+**TurboQuant** (`feature/turboquant-kv-cache` branch):
+- `turboKvBits`: 1-4 (PolarQuant + Hadamard rotation, 3-bit recommended)
+- `turboFp16Layers`: layers to keep FP16 (default: 1)
+- `turboVBits`: optional V-bit width for standard affine quantization
+- Config variant: `configs/turboQuant/models.jsonc`
+
+**Mixed-Quant** (`feature/mixed-quant-kv-cache` branch):
+- `kvCacheQuantization`: `"Kbits,Vbits"` string (e.g. `"8,4"`, `"8,2"`)
+  - K is usually higher precision than V — key projections are more sensitive
+  - `"8,4"` = balanced (good quality, ~2x compression)
+  - `"8,2"` = aggressive (max compression, slight quality trade-off)
+  - `"4,4"` = extreme (lowest memory, quality may suffer)
+- `kvGroupSize`: quantization group size (default: 64)
+- `quantizedKvStart`: token count to start quantizing (default: 5000)
+- `kvCacheQuantizeAfterPrefill`: keep FP16 during prefill, quantize after (default: false)
+- Config variant: `configs/mixedQuant/models.jsonc`
+
+**Vanilla** (`official/main` branch):
+- No KV compression — full FP16 KV cache
+- Config variant: `configs/vanilla/models.jsonc`
+
+To switch variants, copy the desired config into `~/.localllm/models.jsonc`:
+```bash
+cp configs/mixedQuant/models.jsonc ~/.localllm/models.jsonc
+```
+
 ## Documentation
 
 ### Historical Docs

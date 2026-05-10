@@ -1,0 +1,116 @@
+// models.jsonc — per-user server config (Mixed-Quant variant)
+// Branch: feature/mixed-quant-kv-cache
+// Copy to ~/.localllm/models.jsonc and edit as needed
+// This file is NOT tracked in git.
+//
+// Mixed-Quant uses Apple's native mx.quantized_matmul for KV cache
+// compression (K@K-bit, V@V-bit). Recommended over TurboQuant for
+// stability. Can coexist with TurboQuant params — if both are set,
+// kvCacheQuantization takes precedence.
+
+{
+  // Global defaults — overridden per-server below
+  "defaults": {
+    // Mixed-precision KV cache quantization: K@K-bit,V@V-bit
+    // (e.g. "8,4" for K@8bit, V@4bit). Uses Apple's native
+    // mx.quantized_matmul. Recommended over TurboQuant for stability.
+    // Pattern: "Kbits,Vbits" — K is usually higher precision than V
+    // because key projections are more sensitive to quantization error.
+    // Common settings:
+    //   "8,4"  — balanced: good quality, ~2x KV compression
+    //   "8,2"  — aggressive: max compression, slight quality trade-off
+    //   "4,4"  — extreme: lowest memory, quality may suffer
+    "kvCacheQuantization": "8,4",
+
+    // Group size for KV cache quantization (default: 64).
+    // Larger groups = better compression but less granular.
+    "kvGroupSize": 64,
+
+    // When kvCacheQuantization is set, start quantizing the KV cache
+    // from this token count onwards (post-prefill conversion).
+    // Default: 5000.
+    "quantizedKvStart": 5000,
+
+    // When kvCacheQuantization is set, keep KV cache in FP16 during
+    // prefill and convert to mixed-precision after prefill completes.
+    // This gives better prefill quality but uses more memory during
+    // prefill. Default: false (quantize from the start, lower memory,
+    // slightly lower prefill quality).
+    "kvCacheQuantizeAfterPrefill": false,
+
+    // TurboQuant KV cache compression bits (1-4, uses PolarQuant + Hadamard)
+    // Available as an alternative to kvCacheQuantization.
+    // 3-bit recommended by upstream. Lower = more compression, slight quality trade-off.
+    // Leave null to disable TurboQuant.
+    "turboKvBits": null,
+
+    // Number of first/last layers to keep FP16 when using TurboQuant (default: 1)
+    "turboFp16Layers": 1,
+
+    // Use standard affine quantization for values at the given bit width
+    // instead of PolarQuant. Requires turboKvBits to be set.
+    "turboVBits": null,
+
+    // Prompt cache: max KV caches held in RAM
+    "promptCacheSize": 50,
+
+    // Prompt cache: hard byte limit for cached KV (40 GB)
+    "promptCacheBytes": 42949672960,
+
+    // Parallel decode slots and prefill workers
+    "decodeConcurrency": 6,
+    "prefillConcurrency": 8,
+    "prefillStepSize": 2048,
+
+    // Sampling defaults
+    "temperature": 0.0,
+    "maxTokens": 4096,
+
+    // Chat template kwargs passed to tokenizer.apply_chat_template()
+    "chatTemplateArgs": {
+      "enable_thinking": true
+    }
+  },
+
+  // Available model variants per server.
+  // Swap models by changing the "model" field in the servers section below.
+  // Or use: ./swap-model.sh <server> <variant-name>
+  "modelVariants": {
+    "dense": [
+      "Qwen3.6-27B-UD-MLX-4bit",
+      "Qwen3.6-27B-8bit"
+    ],
+    "moe": [
+      "Qwen3.6-35B-A3B-UD-MLX-4bit"
+      // Future: "Gemma-XX-A4B-MLX-4bit"
+    ]
+  },
+
+  // Per-server config
+  "servers": {
+    // Dense 27B — switch variants via modelVariants above or ./swap-model.sh
+    "dense": {
+      "enabled": true,
+      "model": "Qwen3.6-27B-8bit",
+      "port": 30090,
+      "logFile": "dense.log"
+    },
+
+    // MoE 35B-A3B — primary model
+    "moe": {
+      "enabled": false,
+      "model": "Qwen3.6-35B-A3B-UD-MLX-4bit",
+      "port": 30083,
+      "logFile": "moe.log",
+      "decodeConcurrency": 8,
+      "maxTokens": 32768
+      //"logLevel": "DEBUG"
+    }
+  },
+
+  // Paths (usually don't need to change)
+  "modelDir": "$HOME/.localllm/models",
+  "pidDir": "$HOME/.localllm/pids",
+  "cacheDir": "$HOME/.localllm/prompt_cache",
+  "logDir": "$HOME/.localllm"
+}

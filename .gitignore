@@ -1,6 +1,6 @@
 # Per-user config (machine-specific)
 models.conf
-models.jsonc
+/models.jsonc
 
 # Logs
 *.log

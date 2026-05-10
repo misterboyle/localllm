@@ -5,6 +5,29 @@
 {
   // Global defaults — overridden per-server below
   "defaults": {
+    // === KV Cache Compression (pick one strategy) ===
+    //
+    // Option A: TurboQuant (feature/turboquant-kv-cache branch)
+    // PolarQuant + Hadamard rotation. 3-bit recommended.
+    // "turboKvBits": 3,
+    // "turboFp16Layers": 1,
+    // "turboVBits": null,
+    //
+    // Option B: Mixed-Quant (feature/mixed-quant-kv-cache branch)
+    // Apple native mx.quantized_matmul. Recommended over TurboQuant.
+    // Pattern: "Kbits,Vbits" — K is usually higher precision than V
+    //   "8,4" = balanced (good quality, ~2x compression)
+    //   "8,2" = aggressive (max compression, slight quality trade-off)
+    //   "4,4" = extreme (lowest memory, quality may suffer)
+    // "kvCacheQuantization": "8,4",
+    // "kvGroupSize": 64,
+    // "quantizedKvStart": 5000,
+    // "kvCacheQuantizeAfterPrefill": false,
+    //
+    // Option C: Vanilla (official/main branch)
+    // No KV compression — full FP16 KV cache.
+    // Leave all KV params commented out.
+
     // TurboQuant KV cache compression bits (1-4, uses PolarQuant + Hadamard)
     // 3-bit recommended by upstream. Lower = more compression, slight quality trade-off.
     "turboKvBits": 3,

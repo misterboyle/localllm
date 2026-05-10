@@ -1,0 +1,93 @@
+// models.jsonc — per-user server config (TurboQuant variant)
+// Branch: feature/turboquant-kv-cache
+// Copy to ~/.localllm/models.jsonc and edit as needed
+// This file is NOT tracked in git.
+
+{
+  // Global defaults — overridden per-server below
+  "defaults": {
+    // TurboQuant KV cache compression bits (1-4, uses PolarQuant + Hadamard)
+    // 3-bit recommended by upstream. Lower = more compression, slight quality trade-off.
+    "turboKvBits": 4,
+
+    // Number of first/last layers to keep FP16 when using TurboQuant (default: 1)
+    // Set higher for better quality, lower for more compression.
+    "turboFp16Layers": 1,
+
+    // Use standard affine quantization for values at the given bit width
+    // instead of PolarQuant. Requires turboKvBits to be set.
+    // Leave null to use PolarQuant for both K and V.
+    "turboVBits": null,
+
+    // Prompt cache: max KV caches held in RAM
+    // 50 slots for opencode tool-heavy sessions. Each slot ~1-2GB,
+    // with 40GB hard cap this holds ~20-30 turns of conversation.
+    "promptCacheSize": 50,
+
+    // Prompt cache: hard byte limit for cached KV (40 GB)
+    // Raised from 20GB — 128GB machine can handle it. Prevents
+    // cache oscillation that causes full reprocesses on large prompts.
+    "promptCacheBytes": 42949672960,
+
+    // Parallel decode slots and prefill workers
+    // 6 is the memory-safe limit for 27B on 128GB M5 Max.
+    // Active KV is fp16 (64 KB/token), 6 @ 100K avg = 39 GB active KV.
+    // See memory-budget.py for full analysis.
+    "decodeConcurrency": 6,
+    "prefillConcurrency": 8,
+    "prefillStepSize": 2048,
+
+    // Sampling defaults
+    "temperature": 0.0,
+    "maxTokens": 4096,
+
+    // Chat template kwargs passed to tokenizer.apply_chat_template()
+    "chatTemplateArgs": {
+      "enable_thinking": true
+    }
+  },
+
+  // Available model variants per server.
+  // Swap models by changing the "model" field in the servers section below.
+  // Or use: ./swap-model.sh <server> <variant-name>
+  "modelVariants": {
+    "dense": [
+      "Qwen3.6-27B-UD-MLX-4bit",
+      "Qwen3.6-27B-8bit"
+    ],
+    "moe": [
+      "Qwen3.6-35B-A3B-UD-MLX-4bit"
+      // Future: "Gemma-XX-A4B-MLX-4bit"
+    ]
+  },
+
+  // Per-server config
+  "servers": {
+    // Dense 27B — switch variants via modelVariants above or ./swap-model.sh
+    "dense": {
+      "enabled": true,
+      "model": "Qwen3.6-27B-8bit",
+      "port": 30090,
+      "logFile": "dense.log"
+    },
+
+    // MoE 35B-A3B — primary model
+    "moe": {
+      "enabled": false,
+      "model": "Qwen3.6-35B-A3B-UD-MLX-4bit",
+      "port": 30083,
+      "logFile": "moe.log",
+      "decodeConcurrency": 8,
+      "maxTokens": 32768
+      //"logLevel": "DEBUG"
+    }
+  },
+
+  // Paths (usually don't need to change)
+  // NOTE: cacheDir is no longer used since disk-backed caching was removed
+  // in the upstream server refactor. Only in-memory caching remains.
+  "modelDir": "$HOME/.localllm/models",
+  "pidDir": "$HOME/.localllm/pids",
+  "cacheDir": "$HOME/.localllm/prompt_cache",
+  "logDir": "$HOME/.localllm"
+}
