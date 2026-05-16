@@ -24,6 +24,9 @@
     // "quantizedKvStart": 5000,
     // "kvCacheQuantizeAfterPrefill": false,
     //
+    // Disk-backed prompt cache (survives server restarts)
+    // "promptCacheDir": "$HOME/.localllm/prompt_cache",
+    //
     // Option C: Vanilla (official/main branch)
     // No KV compression — full FP16 KV cache.
     // Leave all KV params commented out.
@@ -31,6 +34,13 @@
     // TurboQuant KV cache compression bits (1-4, uses PolarQuant + Hadamard)
     // 3-bit recommended by upstream. Lower = more compression, slight quality trade-off.
     "turboKvBits": 3,
+
+    // Number of first/last layers to keep FP16 when using TurboQuant (default: 1)
+    "turboFp16Layers": 1,
+
+    // Use standard affine quantization for values at the given bit width
+    // instead of PolarQuant. Leave null to use PolarQuant for both K and V.
+    "turboVBits": null,
 
     // Prompt cache: max KV caches held in RAM
     "promptCacheSize": 12,
@@ -49,13 +59,20 @@
     "prefillConcurrency": 8,
     "prefillStepSize": 2048,
 
-    // Sampling defaults
-    "temperature": 0.0,
+    // Sampling defaults — aligned with Unsloth Qwen3.6 recommendations
+    // Thinking mode (general): temp=1.0, top_p=0.95, top_k=20
+    // Coding mode: temp=0.6, presence_penalty=0.0 (set per-request)
+    "temperature": 1.0,
+    "topP": 0.95,
+    "topK": 20,
     "maxTokens": 4096,
 
     // Chat template kwargs passed to tokenizer.apply_chat_template()
+    // enable_thinking: turn thinking on/off (default: true)
+    // preserve_thinking: keep thinking trace from previous turns (Qwen3.6)
     "chatTemplateArgs": {
-      "enable_thinking": true
+      "enable_thinking": true,
+      "preserve_thinking": true
     }
   },
 
@@ -75,7 +92,7 @@
       "enabled": true,
       "model": "Qwen3.6-35B-A3B-UD-MLX-4bit",
       "port": 30083,
-      "logFile": "moe.log",
+      "logFile": "moe.log"
       // "logLevel": "DEBUG",
       // Override per-server as needed, e.g.:
       // "turboKvBits": 4,
@@ -86,8 +103,6 @@
   },
 
   // Paths (usually don't need to change)
-  // NOTE: cacheDir is no longer used since disk-backed caching was removed
-  // in the upstream server refactor. Only in-memory caching remains.
   "modelDir": "$HOME/.localllm/models",
   "pidDir": "$HOME/.localllm/pids",
   "cacheDir": "$HOME/.localllm/prompt_cache",

@@ -55,6 +55,13 @@
   // Default model — change to any provider/model combo above
   "model": "mlx-moe/qwen3.6-35b-a3b",
 
+  // Unsloth Qwen3.6 thinking mode (general): temp=1.0, top_p=0.95
+  // Coding mode uses temp=0.6 (can be overridden per-agent if needed)
+  "agent": {
+    "temperature": 1.0,
+    "top_p": 0.95
+  },
+
   "compaction": {
     "auto": false,
     "prune": false

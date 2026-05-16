@@ -29,13 +29,20 @@
     "prefillConcurrency": 8,
     "prefillStepSize": 2048,
 
-    // Sampling defaults
-    "temperature": 0.0,
+    // Sampling defaults — aligned with Unsloth Qwen3.6 recommendations
+    // Thinking mode (general): temp=1.0, top_p=0.95, top_k=20
+    // Coding mode: temp=0.6, presence_penalty=0.0 (set per-request)
+    "temperature": 1.0,
+    "topP": 0.95,
+    "topK": 20,
     "maxTokens": 4096,
 
     // Chat template kwargs passed to tokenizer.apply_chat_template()
+    // enable_thinking: turn thinking on/off (default: true)
+    // preserve_thinking: keep thinking trace from previous turns (Qwen3.6)
     "chatTemplateArgs": {
-      "enable_thinking": true
+      "enable_thinking": true,
+      "preserve_thinking": true
     }
   },
 

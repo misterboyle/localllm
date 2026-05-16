@@ -128,6 +128,31 @@ To switch variants, copy the desired config into `~/.localllm/models.jsonc`:
 cp configs/mixedQuant/models.jsonc ~/.localllm/models.jsonc
 ```
 
+### Sampling Parameters
+
+Sampling defaults are aligned with [Unsloth Qwen3.6 recommendations](https://unsloth.ai/docs/models/qwen3.6):
+
+**Thinking mode (general tasks):**
+- `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`
+- `presence_penalty: 1.5` (set per-request in opencode API body)
+
+**Thinking mode (coding tasks):**
+- `temperature: 0.6`, `top_p: 0.95`, `top_k: 20`
+- `presence_penalty: 0.0`
+
+**Instruct mode (non-thinking):**
+- General: `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`
+- Reasoning: `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`
+
+**Config locations:**
+- Server defaults: `models.jsonc` → `defaults.temperature`, `defaults.topP`, `defaults.topK`
+- Opencode defaults: `opencode.jsonc` → `agent.temperature`, `agent.top_p` (applies to all agents)
+
+**Notes:**
+- `presence_penalty` and `frequency_penalty` are NOT server CLI args — they must be set per-request in the OpenAI API body
+- Opencode does not currently support setting these in config; they default to `undefined` (disabled)
+- `min_p: 0.0` is the default in both server and Unsloth recommendations
+
 ## Documentation
 
 ### Historical Docs

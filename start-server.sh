@@ -74,16 +74,22 @@ model_dir = expand(v('modelDir', home + '/.localllm/models'))
 
 d = v('defaults', {})
 p('CONF_TURBO_KV_BITS', d.get('turboKvBits', ''))
+p('CONF_TURBO_FP16_LAYERS', d.get('turboFp16Layers', ''))
+p('CONF_TURBO_V_BITS', d.get('turboVBits', ''))
+p('CONF_SINGLE_MODE', d.get('singleMode', ''))
 p('CONF_KV_CACHE_QUANTIZATION', d.get('kvCacheQuantization', ''))
 p('CONF_KV_GROUP_SIZE', d.get('kvGroupSize', ''))
 p('CONF_QUANTIZED_KV_START', d.get('quantizedKvStart', ''))
 p('CONF_KV_CACHE_QUANTIZE_AFTER_PREFILL', d.get('kvCacheQuantizeAfterPrefill', ''))
+p('CONF_PROMPT_CACHE_DIR', expand(d.get('promptCacheDir', '')))
 p('CONF_PROMPT_CACHE_SIZE', d['promptCacheSize'])
 p('CONF_PROMPT_CACHE_BYTES', d.get('promptCacheBytes', ''))
 p('CONF_DECODE_CONCURRENCY', d['decodeConcurrency'])
 p('CONF_PREFILL_CONCURRENCY', d['prefillConcurrency'])
 p('CONF_PREFILL_STEP_SIZE', d['prefillStepSize'])
 p('CONF_TEMP', d['temperature'])
+p('CONF_TOP_P', d.get('topP', ''))
+p('CONF_TOP_K', d.get('topK', ''))
 p('CONF_MAX_TOKENS', d['maxTokens'])
 p('CONF_CHAT_TEMPLATE_ARGS', json.dumps(d['chatTemplateArgs']))
 
@@ -94,12 +100,16 @@ for name, srv in cfg.get('servers', {}).items():
     p(f'{n}_PORT', srv['port'])
     p(f'{n}_LOG', srv['logFile'])
     for key, jkey in [('turboKvBits', 'TURBO_KV_BITS'),
+                        ('turboFp16Layers', 'TURBO_FP16_LAYERS'),
+                        ('turboVBits', 'TURBO_V_BITS'),
+                        ('singleMode', 'SINGLE_MODE'),
                         ('promptCacheSize', 'PROMPT_CACHE_SIZE'),
                         ('promptCacheBytes', 'PROMPT_CACHE_BYTES'),
                         ('decodeConcurrency', 'DECODE_CONCURRENCY'),
                         ('prefillConcurrency', 'PREFILL_CONCURRENCY'),
                         ('prefillStepSize', 'PREFILL_STEP_SIZE'),
-                        ('temperature', 'TEMP'), ('maxTokens', 'MAX_TOKENS'),
+                        ('temperature', 'TEMP'), ('topP', 'TOP_P'),
+                        ('topK', 'TOP_K'), ('maxTokens', 'MAX_TOKENS'),
                         ('logLevel', 'LOG_LEVEL')]:
         if key in srv:
             p(f'{n}_{jkey}', srv[key])
@@ -188,7 +198,7 @@ build_args() {
   local upper
   upper=$(to_upper "$name")
 
-  local model tkv kv_quant kv_group kv_start kv_after_prefill csize cbytes dconc pconc pstep temp maxtok chat_args log_level port logf
+  local model tkv kv_quant kv_group kv_start kv_after_prefill fp16_layers v_bits csize cbytes dconc pconc pstep temp top_p top_k maxtok chat_args log_level port logf
   model=$(resolve "${upper}_MODEL" "error")
   # Resolve model to local path if it exists under modelDir
   if [ -d "$CONF_MODEL_DIR/$model" ]; then
@@ -200,16 +210,22 @@ build_args() {
   fi
   port=$(resolve "${upper}_PORT" "error")
   tkv=$(resolve "${upper}_TURBO_KV_BITS" "CONF_TURBO_KV_BITS")
+  fp16_layers=$(resolve "${upper}_TURBO_FP16_LAYERS" "CONF_TURBO_FP16_LAYERS")
+  v_bits=$(resolve "${upper}_TURBO_V_BITS" "CONF_TURBO_V_BITS")
+  single_mode=$(resolve "${upper}_SINGLE_MODE" "CONF_SINGLE_MODE")
   kv_quant=$(resolve "${upper}_KV_CACHE_QUANTIZATION" "CONF_KV_CACHE_QUANTIZATION")
   kv_group=$(resolve "${upper}_KV_GROUP_SIZE" "CONF_KV_GROUP_SIZE")
   kv_start=$(resolve "${upper}_QUANTIZED_KV_START" "CONF_QUANTIZED_KV_START")
   kv_after_prefill=$(resolve "${upper}_KV_CACHE_QUANTIZE_AFTER_PREFILL" "CONF_KV_CACHE_QUANTIZE_AFTER_PREFILL")
+  prompt_cache_dir=$(resolve "${upper}_PROMPT_CACHE_DIR" "CONF_PROMPT_CACHE_DIR")
   csize=$(resolve "${upper}_PROMPT_CACHE_SIZE" "CONF_PROMPT_CACHE_SIZE")
   cbytes=$(resolve "${upper}_PROMPT_CACHE_BYTES" "CONF_PROMPT_CACHE_BYTES")
   dconc=$(resolve "${upper}_DECODE_CONCURRENCY" "CONF_DECODE_CONCURRENCY")
   pconc=$(resolve "${upper}_PREFILL_CONCURRENCY" "CONF_PREFILL_CONCURRENCY")
   pstep=$(resolve "${upper}_PREFILL_STEP_SIZE" "CONF_PREFILL_STEP_SIZE")
   temp=$(resolve "${upper}_TEMP" "CONF_TEMP")
+  top_p=$(resolve "${upper}_TOP_P" "CONF_TOP_P")
+  top_k=$(resolve "${upper}_TOP_K" "CONF_TOP_K")
   maxtok=$(resolve "${upper}_MAX_TOKENS" "CONF_MAX_TOKENS")
   log_level=$(resolve "${upper}_LOG_LEVEL" "")
   chat_args="$CONF_CHAT_TEMPLATE_ARGS"
@@ -239,8 +255,15 @@ build_args() {
     --prefill-step-size "$pstep"
     --temp "$temp"
     --max-tokens "$maxtok"
-    --chat-template-args "$chat_args"
   )
+
+  if [ -n "$top_p" ]; then
+    server_args+=(--top-p "$top_p")
+  fi
+
+  if [ -n "$top_k" ]; then
+    server_args+=(--top-k "$top_k")
+  fi
 
   if [ -n "$cbytes" ]; then
     server_args+=(--prompt-cache-bytes "$cbytes")
@@ -248,6 +271,18 @@ build_args() {
 
   if [ -n "$tkv" ]; then
     server_args+=(--turbo-kv-bits "$tkv")
+  fi
+
+  if [ -n "$fp16_layers" ]; then
+    server_args+=(--turbo-fp16-layers "$fp16_layers")
+  fi
+
+  if [ -n "$v_bits" ]; then
+    server_args+=(--turbo-v-bits "$v_bits")
+  fi
+
+  if [ "$single_mode" = "True" ] || [ "$single_mode" = "true" ] || [ "$single_mode" = "1" ]; then
+    server_args+=(--single-mode)
   fi
 
   if [ -n "$kv_quant" ]; then
@@ -264,6 +299,10 @@ build_args() {
 
   if [ "$kv_after_prefill" = "True" ]; then
     server_args+=(--kv-cache-quantize-after-prefill)
+  fi
+
+  if [ -n "$prompt_cache_dir" ]; then
+    server_args+=(--prompt-cache-dir "$prompt_cache_dir")
   fi
 
   if [ -n "$log_level" ]; then
