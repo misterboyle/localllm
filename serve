@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONF="$(cd "$(dirname "$0")" && pwd)/servers.jsonc"
+PID_DIR="$(cd "$(dirname "$0")" && pwd)/pids"
+LOG_DIR="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$PID_DIR"
+
+# Strip JSONC comments → valid JSON
+json() {
+  python3 -c "
+import re, sys, json
+raw = sys.stdin.read()
+raw = re.sub(r'//.*?$', '', raw, flags=re.MULTILINE)
+raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.DOTALL)
+json.dump(json.loads(raw), sys.stdout)
+"
+}
+
+# Expand ~ in paths
+expand_path() {
+  echo "$1" | sed "s|^~|$HOME|"
+}
+
+# Get llama.cpp binary path (always absolute)
+llamacpp_bin() {
+  local default_bin="$(cd "$(dirname "$0")" && pwd)/build/bin/llama-server"
+  local bin
+  bin=$(cat "$CONF" | json | python3 -c "import json,sys,os; print(os.path.expanduser(json.load(sys.stdin).get('llamacpp_bin','$default_bin')))")
+  # Resolve relative paths against script directory
+  if [[ "$bin" != /* ]]; then
+    bin="$(cd "$(dirname "$0")" && pwd)/$bin"
+  fi
+  echo "$bin"
+}
+
+# List all server names
+list_servers() {
+  cat "$CONF" | json | python3 -c "import json,sys; [print(n) for n in json.load(sys.stdin)['servers']]"
+}
+
+# Get a field from a server entry
+server_field() {
+  local name="$1" field="$2"
+  cat "$CONF" | json | python3 -c "
+import json,sys
+cfg = json.load(sys.stdin)
+val = cfg['servers']['$name'].get('$field', '')
+print(val if val else '')
+"
+}
+
+# Get args as space-separated string
+server_args() {
+  local name="$1"
+  cat "$CONF" | json | python3 -c "
+import json,sys
+args = json.load(sys.stdin)['servers']['$name'].get('args', [])
+print(' '.join(f'\"{a}\"' for a in args))
+"
+}
+
+# Build llama.cpp command line
+build_llamacpp_cmd() {
+  local name="$1"
+  local model mmproj port args
+
+  model=$(expand_path "$(server_field "$name" model)")
+  mmproj=$(expand_path "$(server_field "$name" mmproj)")
+  port=$(server_field "$name" port)
+  args=$(server_args "$name")
+
+  local bin
+  bin=$(llamacpp_bin)
+
+  local cmd="$bin -m '$model' --port $port --host 127.0.0.1 $args"
+
+  if [ -n "$mmproj" ]; then
+    cmd="$cmd --mmproj '$(expand_path "$mmproj")'"
+  fi
+
+  echo "$cmd"
+}
+
+# MLX turbo venv — used for all MLX backends
+MLX_TURBO_VENV="${HOME}/mlx-lm-turbo/venv"
+
+# Build mlx command line
+build_mlx_cmd() {
+  local name="$1"
+  local model port args
+
+  model=$(expand_path "$(server_field "$name" model)")
+  port=$(server_field "$name" port)
+  args=$(server_args "$name")
+
+  echo "${MLX_TURBO_VENV}/bin/python3 -m mlx_lm.server --model '$model' --port $port --host 127.0.0.1 $args"
+}
+
+# Start all servers (or specific ones)
+do_start() {
+  local targets=("$@")
+
+  if [ ${#targets[@]} -eq 0 ]; then
+    targets=($(list_servers))
+  fi
+
+  for name in "${targets[@]}"; do
+    local backend model port logf pidfile
+
+    backend=$(server_field "$name" backend)
+    port=$(server_field "$name" port)
+    logf="$LOG_DIR/${name}.log"
+    pidfile="$PID_DIR/${name}.pid"
+
+    # Check if already running
+    if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+      echo "$name already running on port $port (PID $(cat "$pidfile"))"
+      continue
+    fi
+
+    echo "Starting $name on port $port ($backend)..."
+
+    local cmd
+    if [ "$backend" = "mlx" ]; then
+      cmd=$(build_mlx_cmd "$name")
+    else
+      cmd=$(build_llamacpp_cmd "$name")
+    fi
+
+    echo "$cmd" >> "$logf" 2>&1
+    eval "$cmd" >> "$logf" 2>&1 &
+    echo $! > "$pidfile"
+
+    echo "  → PID $!"
+  done
+
+  echo ""
+  echo "Waiting for servers to be ready..."
+  sleep 3
+
+  for name in "${targets[@]}"; do
+    local port
+    port=$(server_field "$name" port)
+    if curl -sf "http://localhost:$port/health" > /dev/null 2>&1; then
+      echo "  ✓ $name (localhost:$port)"
+    else
+      echo "  ✗ $name (localhost:$port) — check $LOG_DIR/${name}.log"
+    fi
+  done
+}
+
+# Stop all servers (or specific ones)
+do_stop() {
+  local targets=("$@")
+
+  if [ ${#targets[@]} -eq 0 ]; then
+    targets=($(list_servers))
+  fi
+
+  for name in "${targets[@]}"; do
+    local pidfile="$PID_DIR/${name}.pid"
+    local pid
+
+    if [ ! -f "$pidfile" ]; then
+      echo "$name not running (no PID file)"
+      continue
+    fi
+
+    pid="$(cat "$pidfile")"
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "$name not running (stale PID $pid)"
+      rm -f "$pidfile"
+      continue
+    fi
+
+    # SIGTERM first, give it 2 seconds to shut down cleanly
+    kill "$pid" 2>/dev/null
+    local waited=0
+    while [ $waited -lt 2 ] && kill -0 "$pid" 2>/dev/null; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+
+    # If still alive, SIGKILL
+    if kill -0 "$pid" 2>/dev/null; then
+      echo -n "  $name didn't stop, sending SIGKILL..."
+      kill -9 "$pid" 2>/dev/null
+      sleep 0.5
+      if kill -0 "$pid" 2>/dev/null; then
+        echo " FAILED — use 'kill -9 $pid' manually"
+      else
+        echo " done"
+      fi
+    fi
+
+    rm -f "$pidfile"
+    echo "Stopped $name"
+  done
+}
+
+# Show status of all servers (or specific ones)
+do_status() {
+  local targets=("$@")
+
+  if [ ${#targets[@]} -eq 0 ]; then
+    targets=($(list_servers))
+  fi
+
+  echo "Server status:"
+  for name in "${targets[@]}"; do
+    local port pidfile pid
+    port=$(server_field "$name" port)
+    pidfile="$PID_DIR/${name}.pid"
+
+    if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+      echo "  ✓ $name (localhost:$port) PID $(cat "$pidfile")"
+    elif [ -f "$pidfile" ]; then
+      echo "  ✗ $name (localhost:$port) — stale PID $(cat "$pidfile")"
+    else
+      echo "  ✗ $name (localhost:$port) — not running"
+    fi
+  done
+}
+
+# Main
+case "${1:-help}" in
+  start)   do_start "${@:2}" ;;
+  stop)    do_stop "${@:2}" ;;
+  status)  do_status "${@:2}" ;;
+  *)       echo "Usage: $0 {start|stop|status} [server1] [server2] ..."
+           echo ""
+           echo "Available servers:"
+           list_servers | sed 's/^/  /'
+           echo ""
+           echo "Without server names, operates on all servers." ;;
+esac
