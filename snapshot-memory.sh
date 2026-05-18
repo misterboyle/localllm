@@ -9,6 +9,7 @@ echo "" | tee -a "$LOG"
 echo "=== MEMORY SNAPSHOT: $PHASE ($(date '+%H:%M:%S')) ===" | tee -a "$LOG"
 
 # MLX server processes
+# shellcheck disable=SC2009
 ps aux | grep mlx_lm.server | grep -v grep | awk '{printf "PID: %s, MEM%%: %.1f, RSS: %.1f GB\n", $2, $4, $6/1048576}' | tee -a "$LOG"
 
 # System memory

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC2034
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF_FILE="$HOME/.localllm/models.jsonc"
 
@@ -160,6 +161,7 @@ export HF_HUB_ENABLE_XET=0
 
 PID_DIR="$CONF_PID_DIR"
 CACHE_DIR="$CONF_CACHE_DIR"
+# shellcheck disable=SC2034
 LOG_DIR="$CONF_LOG_DIR"
 
 # Resolve per-server values (override or fallback to defaults)
@@ -177,6 +179,7 @@ resolve() {
   fi
 }
 
+# shellcheck disable=SC2329
 stop_servers() {
   log "Stopping servers..."
   for name in dense moe; do
@@ -228,6 +231,7 @@ build_args() {
   top_k=$(resolve "${upper}_TOP_K" "CONF_TOP_K")
   maxtok=$(resolve "${upper}_MAX_TOKENS" "CONF_MAX_TOKENS")
   log_level=$(resolve "${upper}_LOG_LEVEL" "")
+  # shellcheck disable=SC2034
   chat_args="$CONF_CHAT_TEMPLATE_ARGS"
   logf="$CONF_LOG_DIR/$(resolve "${upper}_LOG" "${name}.log")"
 
@@ -354,7 +358,8 @@ for name in $SERVERS; do
 done
 
 log "Waiting for server(s) to be ready..."
-for i in $(seq 1 120); do
+count=0
+while [ "$count" -lt 120 ]; do
   if eval "$HEALTH_CHECK"; then
     log "Servers ready."
     for name in $SERVERS; do
@@ -369,9 +374,10 @@ for i in $(seq 1 120); do
       log "  $(to_upper "$name"): http://localhost:$port/v1/chat/completions"
     done
     log "Press Ctrl+C to stop."
-    tail -f $LOG_FILES --pid=$$ 2>/dev/null || true
+    tail -f "$LOG_FILES" --pid=$$ 2>/dev/null || true
     exit 0
   fi
+  count=$((count + 1))
   sleep 1
 done
 
