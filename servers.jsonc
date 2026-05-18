@@ -1,0 +1,72 @@
+{
+  // Server definitions — one entry per llama.cpp or MLX server.
+  // Add/remove entries freely. The launcher picks them up automatically.
+
+  "llamacpp_bin": "~/llama.cpp-turbo/build/bin/llama-server",
+
+  "servers": {
+    "dense": {
+      "backend": "llamacpp",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-GGUF/snapshots/82d411acf4a06cfb8d9b073a5211bf410bfc29bf/Qwen3.6-27B-UD-Q6_K_XL.gguf",
+      "port": 30080,
+      "args": ["-c", "8192"]
+    },
+    "moe": {
+      "backend": "llamacpp",
+      "model": "~/.localllm/models/Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf",
+      "port": 30081,
+      "args": ["-c", "8192"]
+    },
+    "mtp-vision": {
+      "backend": "llamacpp",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/Qwen3.6-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/mmproj-F16.gguf",
+      "port": 30082,
+      "args": ["-c", "8192", "--jinja"]
+    },
+    "mlx-dense": {
+      "backend": "mlx",
+      "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-6bit",
+      "port": 30090,
+      "args": ["--temp", "0.6"]
+    },
+    "mlx-moe-8bit": {
+      "backend": "mlx",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-35B-A3B-MLX-8bit/snapshots/d928611c119d7d86037d6926ac50712062ff0f29",
+      "port": 30084,
+      "args": [
+        "--prompt-cache-size", "50",
+        "--decode-concurrency", "8",
+        "--prompt-concurrency", "8",
+        "--prefill-step-size", "2048",
+        "--temp", "0.6",
+        "--max-tokens", "32768",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prompt-cache-bytes", "42949672960",
+        //"--kv-cache-quantization", "8,4",
+        //"--quantized-kv-start", "0",
+        "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
+      ]
+    },
+    "mlx-moe": {
+      "backend": "mlx",
+      "model": "~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit",
+      "port": 30083,
+      "args": [
+        "--prompt-cache-size", "50",
+        "--decode-concurrency", "8",
+        "--prompt-concurrency", "8",
+        "--prefill-step-size", "2048",
+        "--temp", "0.6",
+        "--max-tokens", "32768",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prompt-cache-bytes", "42949672960",
+        "--kv-cache-quantization", "8,4",
+        "--quantized-kv-start", "0",
+        "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
+      ]
+    }
+  }
+}
