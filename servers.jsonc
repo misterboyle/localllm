@@ -22,11 +22,11 @@
       "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/Qwen3.6-27B-UD-Q4_K_XL.gguf",
       "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/mmproj-F16.gguf",
       "port": 30082,
-      "args": ["-c", "8192", "--jinja"]
+      "args": ["-c", "262144"]
     },
     "mlx-dense": {
       "backend": "mlx",
-      "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-6bit",
+      "model": "~/.localllm/models/Qwen3.6-27B-8bit",
       "port": 30090,
       "args": ["--temp", "0.6"]
     },
@@ -36,14 +36,14 @@
       "port": 30084,
       "args": [
         "--prompt-cache-size", "50",
-        "--decode-concurrency", "8",
-        "--prompt-concurrency", "8",
+        "--decode-concurrency", "4",
+        "--prompt-concurrency", "4",
         "--prefill-step-size", "2048",
         "--temp", "0.6",
         "--max-tokens", "32768",
         "--top-p", "0.95",
         "--top-k", "20",
-        "--prompt-cache-bytes", "42949672960",
+        "--prompt-cache-bytes", "21474836480",
         //"--kv-cache-quantization", "8,4",
         //"--quantized-kv-start", "0",
         "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
@@ -55,14 +55,14 @@
       "port": 30083,
       "args": [
         "--prompt-cache-size", "50",
-        "--decode-concurrency", "8",
-        "--prompt-concurrency", "8",
+        "--decode-concurrency", "4",
+        "--prompt-concurrency", "4",
         "--prefill-step-size", "2048",
         "--temp", "0.6",
         "--max-tokens", "32768",
         "--top-p", "0.95",
         "--top-k", "20",
-        "--prompt-cache-bytes", "42949672960",
+        "--prompt-cache-bytes", "21474836480",
         "--kv-cache-quantization", "8,4",
         "--quantized-kv-start", "0",
         "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
