@@ -26,9 +26,20 @@
     },
     "mlx-dense": {
       "backend": "mlx",
-      "model": "~/.localllm/models/Qwen3.6-27B-8bit",
+      "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit",
       "port": 30090,
-      "args": ["--temp", "0.6"]
+      "args": [
+        "--prompt-cache-size", "50",
+        "--decode-concurrency", "2",
+        "--prompt-concurrency", "2",
+        "--prefill-step-size", "2048",
+        "--temp", "0.6",
+        "--max-tokens", "32768",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prompt-cache-bytes", "21474836480",
+        "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
+      ]
     },
     "mlx-moe-8bit": {
       "backend": "mlx",
@@ -44,6 +55,7 @@
         "--top-p", "0.95",
         "--top-k", "20",
         "--prompt-cache-bytes", "21474836480",
+        //"--turbo-kv-bits", "3",
         //"--kv-cache-quantization", "8,4",
         //"--quantized-kv-start", "0",
         "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
