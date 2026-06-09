@@ -82,8 +82,11 @@ build_llamacpp_cmd() {
   echo "$cmd"
 }
 
-# MLX turbo venv — used for all MLX backends
+# MLX turbo venv — used for mlx-lm backends
 MLX_TURBO_VENV="${HOME}/mlx-lm-turbo/venv"
+
+# OptIQ venv — used for optiq serve backends (with MTP support)
+OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
 # Build mlx command line
 build_mlx_cmd() {
@@ -95,6 +98,19 @@ build_mlx_cmd() {
   args=$(server_args "$name")
 
   echo "${MLX_TURBO_VENV}/bin/python3 -m mlx_lm.server --model '$model' --port $port --host 127.0.0.1 $args"
+}
+
+# Build optiq command line
+build_optiq_cmd() {
+  local name="$1"
+  local model port args
+
+  model=$(expand_path "$(server_field "$name" model)")
+  port=$(server_field "$name" port)
+  args=$(server_args "$name")
+
+  # optiq serve passes extra args through to mlx_lm.server
+  echo "${OPTIQ_VENV}/bin/optiq serve --model '$model' --port $port --host 127.0.0.1 $args"
 }
 
 # Start all servers (or specific ones)
@@ -124,12 +140,14 @@ do_start() {
     local cmd
     if [ "$backend" = "mlx" ]; then
       cmd=$(build_mlx_cmd "$name")
+    elif [ "$backend" = "optiq" ]; then
+      cmd=$(build_optiq_cmd "$name")
     else
       cmd=$(build_llamacpp_cmd "$name")
     fi
 
     echo "$cmd" >> "$logf" 2>&1
-    eval "$cmd" >> "$logf" 2>&1 &
+    eval "exec $cmd" >> "$logf" 2>&1 &
     echo $! > "$pidfile"
 
     echo "  → PID $!"
