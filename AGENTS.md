@@ -130,28 +130,31 @@ cp configs/mixedQuant/models.jsonc ~/.localllm/models.jsonc
 
 ### Sampling Parameters
 
-Sampling defaults are aligned with [Unsloth Qwen3.6 recommendations](https://unsloth.ai/docs/models/qwen3.6):
+Sampling defaults are aligned with [Unsloth Qwen3.8 recommendations](https://unsloth.ai/docs/models/qwen3.8)
+(official model card "Best Practices"; supersedes the Qwen3.6-era values):
 
-**Thinking mode (general tasks):**
-- `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`
-- `presence_penalty: 1.5` (set per-request in opencode API body)
-
-**Thinking mode (coding tasks):**
-- `temperature: 0.6`, `top_p: 0.95`, `top_k: 20`
-- `presence_penalty: 0.0`
+**Thinking mode (default — what opencode runs):**
+- `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`, `min_p: 0.0`
+- `presence_penalty: 0.0`, `repetition_penalty: 1.0`
 
 **Instruct mode (non-thinking):**
-- General: `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`
-- Reasoning: `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`
+- `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`, `min_p: 0.0`
+- `presence_penalty: 1.5`, `repetition_penalty: 1.0`
 
 **Config locations:**
-- Server defaults: `models.jsonc` → `defaults.temperature`, `defaults.topP`, `defaults.topK`
-- Opencode defaults: `opencode.jsonc` → `agent.temperature`, `agent.top_p` (applies to all agents)
+- llama.cpp servers: `servers.jsonc` → per-server `args` (`--temp`, `--top-p`, `--top-k`, `--min-p`)
+- MLX servers: `models.jsonc` → `defaults.temperature`, `defaults.topP`, `defaults.topK`
+- Opencode: currently sets no sampling params — server defaults apply
 
 **Notes:**
-- `presence_penalty` and `frequency_penalty` are NOT server CLI args — they must be set per-request in the OpenAI API body
-- Opencode does not currently support setting these in config; they default to `undefined` (disabled)
-- `min_p: 0.0` is the default in both server and Unsloth recommendations
+- Qwen3.8 is a hybrid thinking model: thinking is ON by default with `reasoning_effort=xhigh`.
+  Adjust via `--chat-template-kwargs '{"reasoning_effort":"medium"}'` (levels: xhigh / medium / low / none)
+- `preserve_thinking` (keep prior thinking traces in context) is a chat-template kwarg —
+  token cost vs accuracy trade-off in long agentic conversations
+- Footgun: llama.cpp server defaults (temp 0.8, top_k 40, min_p 0.05) silently differ from
+  Qwen's recommended values — always set sampling explicitly in `servers.jsonc`
+- `presence_penalty` / `frequency_penalty` are NOT server CLI args — set per-request in the
+  OpenAI API body; opencode does not support them in config (default 0.0 = disabled)
 
 ## Documentation
 
