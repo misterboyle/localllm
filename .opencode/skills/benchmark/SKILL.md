@@ -27,7 +27,7 @@ Key servers for the dense comparison:
 
 | Name | Backend | Model | Port |
 |------|---------|-------|------|
-| `mtp-vision` | llama.cpp | Qwen3.6-27B-UD-Q4_K_XL GGUF | 30082 |
+| `mtp-vision` | llama.cpp | Qwen3.8-27B-UD-Q4_K_XL GGUF (Unsloth Dynamic V3, embedded MTP) | 30082 |
 | `mlx-dense-mtp` | optiq (MLX) | Qwen3.6-27B-OptiQ-4bit | 30091 |
 
 ## Context-Length Benchmarks (Dense)

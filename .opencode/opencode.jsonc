@@ -1,26 +1,27 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "mlx-moe": {
-      "name": "MLX Qwen3.6-35B-A3B MoE",
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "http://localhost:30083/v1",
-        "apiKey": "sk-local"
-      },
-      "models": {
-        "/Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit": {
-          "name": "Qwen3.6-35B-A3B-UD-MLX-4bit",
-          "maxTokens": 262144,
-          "limit": {
-            "context": 262144,
-            "output": 8192
-          }
-        }
-      }
+  // Project-specific overrides only.
+  // Providers live in ~/.config/opencode/opencode.jsonc — don't duplicate them here.
+
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "agent": {
+    "memory-monitor": {
+      "file": ".opencode/agent/memory-monitor.md"
     }
   },
-  "model": "mlx-moe/qwen3.6-35b-a3b-ud-mlx-4bit",
+  "command": {
+    "benchmark": {
+      "template": ".opencode/command/benchmark.md"
+    },
+    "characterize": {
+      "template": ".opencode/command/characterize.md"
+    },
+    "compare": {
+      "template": ".opencode/command/compare.md"
+    }
+  },
   "compaction": {
     "auto": false,
     "prune": false
