@@ -19,10 +19,14 @@
     },
     "mtp-vision": {
       "backend": "llamacpp",
-      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/Qwen3.6-27B-UD-Q4_K_XL.gguf",
-      "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B-MTP-GGUF/snapshots/296162df313e8eebe1e15a00d60b3f8f33962e18/mmproj-F16.gguf",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/990216cf312573f2ac4060279848e0f4237600c7/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/990216cf312573f2ac4060279848e0f4237600c7/mmproj-F16.gguf",
       "port": 30082,
-      "args": ["-c", "262144"]
+      "args": [
+        "-c", "262144",
+        "--spec-type", "draft-mtp",
+        "--spec-draft-n-max", "3"
+      ]
     },
     "mlx-dense": {
       "backend": "mlx",
@@ -35,6 +39,7 @@
         "--prefill-step-size", "2048",
         "--temp", "0.6",
         "--max-tokens", "32768",
+        //"--turbo-kv-bits", "3",
         "--top-p", "0.95",
         "--top-k", "20",
         "--prompt-cache-bytes", "21474836480",
@@ -78,6 +83,20 @@
         "--kv-cache-quantization", "8,4",
         "--quantized-kv-start", "0",
         "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
+      ]
+    },
+    "mlx-dense-mtp": {
+      "backend": "optiq",
+      "model": "mlx-community/Qwen3.6-27B-OptiQ-4bit",
+      "port": 30091,
+      "args": [
+        "--mtp",
+        "--mtp-depth", "2",
+        "--temp", "0.8",
+        "--max-tokens", "32768",
+        "--top-p", "0.95",
+        "--top-k", "40",
+        "--min-p", "0.05"
       ]
     }
   }
