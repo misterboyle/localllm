@@ -32,6 +32,8 @@
         "--top-p", "0.95",
         "--top-k", "20",
         "--min-p", "0.0",
+        // Qwen-VL needs >=1024 image tokens for correct grounding (llama.cpp load_hparams warning)
+        "--image-min-tokens", "1024",
         "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}"
       ]
     },
