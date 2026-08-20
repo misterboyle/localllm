@@ -50,13 +50,14 @@ print(val if val else '')
 "
 }
 
-# Get args as space-separated string
+# Get args as space-separated string (shlex-quoted: values may contain
+# quotes/spaces, e.g. --chat-template-kwargs JSON — see AGENTS.md)
 server_args() {
   local name="$1"
   cat "$CONF" | json | python3 -c "
-import json,sys
+import json,sys,shlex
 args = json.load(sys.stdin)['servers']['$name'].get('args', [])
-print(' '.join(f'\"{a}\"' for a in args))
+print(' '.join(shlex.quote(a) for a in args))
 "
 }
 

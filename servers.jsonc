@@ -31,7 +31,8 @@
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
-        "--min-p", "0.0"
+        "--min-p", "0.0",
+        "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}"
       ]
     },
     "mlx-dense": {
