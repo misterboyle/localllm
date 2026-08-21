@@ -1,8 +1,11 @@
-// opencode.jsonc example — MLX server configuration
+// opencode.jsonc example — MLX server providers
 // Copy to ~/.config/opencode/opencode.jsonc and edit as needed
 //
-// The servers are defined in ~/.localllm/models.jsonc
-// Ports: mlx-dense=30090, mlx-moe=30083 (when enabled)
+// The MLX servers themselves are defined in ~/localllm/servers.jsonc
+// (mlx-* entries). This file only adds opencode providers pointing at them.
+// Only needed when the parked MLX layer is running — the production
+// mtp-vision server (llama.cpp, port 30082) is configured separately.
+// Ports: mlx-dense=30090, mlx-moe=30083, mlx-dense-mtp=30091
 //
 // NOTE: MLX model `name` key must be the full local path. The MLX server
 // re-resolves the model from each request, so the key must match the path

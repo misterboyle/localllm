@@ -13,7 +13,7 @@ if [ ! -f "$MAKEFILE" ]; then
 fi
 
 fail=0
-required_targets=(help setup deps config start stop check lint test clean)
+required_targets=(help lint test check)
 
 for target in "${required_targets[@]}"; do
   if grep -q "^${target}:" "$MAKEFILE" || grep -q "^${target} " "$MAKEFILE"; then

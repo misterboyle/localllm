@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate config example files are valid JSONC
+# Validate JSONC config files (live + examples + MLX variants) parse cleanly
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -7,9 +7,9 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 fail=0
 
-for example in "$ROOT_DIR"/*.jsonc.example; do
+for example in "$ROOT_DIR"/*.jsonc "$ROOT_DIR"/*.jsonc.example "$ROOT_DIR"/configs/*/models.jsonc; do
   [ -f "$example" ] || continue
-  name="$(basename "$example")"
+  name="$(basename "$(dirname "$example")")/$(basename "$example")"
 
   # Strip comments, but preserve // inside quoted strings
   if python3 -c "

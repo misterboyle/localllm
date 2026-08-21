@@ -1,96 +1,82 @@
 # localllm
 
-Local LLM inference on Apple Silicon using MLX. Two models, two servers, one config.
+Local compute engine for multi-agent software development. Runs the best local
+models on Apple Silicon (M5 Max 128GB) entirely on-device — powers agent
+orchestration (gastown.ai, gas city) and, since the Qwen3.8 upgrade, the
+opencode assistant itself (mtp-vision server).
 
-## Architecture
+## Servers: `servers.jsonc` + `./serve`
 
-| Model | Type | Quant | Port | Role |
-|-------|------|-------|------|------|
-| Qwen3.6-27B-UD | Dense | 6-bit | 30090 | Main reasoner — complex reasoning, big context |
-| Qwen3.6-35B-A3B-UD | MoE (3B active) | 4-bit | 30083 | Worker — tool use, code, fast decode |
+One source of truth: **`servers.jsonc`** in this repo. The `./serve` launcher
+reads only that file (`start` / `stop` / `status` [server...]).
 
-Both run as independent `mlx_lm.server` processes on localhost. Configured via `~/.localllm/models.jsonc`. Connected to opencode via `~/.config/opencode/opencode.jsonc`.
+**`~/.localllm` is data-only** — models, pids, logs, prompt cache, venvs.
+Never put config there (the old `~/.localllm/models.jsonc` flow was removed
+2026-08-21).
 
-## Requirements
+| Server | Backend | Model | Port | Status |
+|--------|---------|-------|------|--------|
+| `mtp-vision` | llama.cpp (`~/llama.cpp-turbo`, `mtp-vanilla`) | Qwen3.8-27B-UD-Q4_K_XL + mmproj-F16, MTP spec decode | 30082 | **Production** — the opencode assistant runs here |
+| `dense` | llama.cpp | Qwen3.6-27B-UD-Q6_K_XL | 30080 | parked |
+| `moe` | llama.cpp | Qwen3.6-35B-A3B-UD-Q6_K_XL | 30081 | parked — model not on disk |
+| `mlx-dense` | MLX (`~/mlx-lm-turbo`) | Qwen3.6-27B-UD-MLX-4bit | 30090 | parked — MLX layer on standby |
+| `mlx-moe` | MLX (`~/mlx-lm-turbo`) | Qwen3.6-35B-A3B-UD-MLX-4bit | 30083 | parked |
+| `mlx-moe-8bit` | MLX (`~/mlx-lm-turbo`) | Qwen3.6-35B-A3B-MLX-8bit | 30084 | parked |
+| `mlx-dense-mtp` | optiq (MLX + MTP) | Qwen3.6-27B-OptiQ-4bit | 30091 | parked (model not fully downloaded) |
 
-- macOS with Apple Silicon (M1/M2/M3/M4/M5)
-- Python 3.14
-- 64 GB RAM minimum (128 GB recommended for running both models)
-- ~50 GB disk for models
+Decision (2026-08-21): llama.cpp is the daily driver. The MLX layer migrates
+to Qwen3.8 only if its use resumes.
 
-## Quick Setup
+## Daily use
 
 ```bash
-make setup
-```
+./serve status                       # what's up
+./serve start mtp-vision             # start one (or: ./serve start = all)
+curl http://localhost:30082/health   # health
 
-This clones dependencies, creates a Python venv, installs the MLX stack, downloads models, and generates config files. See `make help` for individual steps.
-
-## Daily Use
-
-```bash
-# Start servers (foreground, Ctrl+C to stop)
-./start-server.sh
-
-# Check health
-curl http://localhost:30090/health   # Dense
-curl http://localhost:30083/health   # MoE
-
-# Memory snapshot
-./snapshot-memory.sh running
+# NOTE: mtp-vision has no restart subcommand. Restart =
+./serve stop mtp-vision && ./serve start mtp-vision
+# — restarting it kills the opencode session running on it. Do it at session end.
 ```
 
 ## Configuration
 
-Edit `~/.localllm/models.jsonc` to enable/disable servers, tune KV quantization, adjust cache sizes, and set concurrency. See `models.jsonc.example` for all options.
-
-The opencode client config lives at `~/.config/opencode/opencode.jsonc`. See `opencode.jsonc.example`.
-
-## Components
-
-| Repo | Branch | Purpose |
-|------|--------|---------|
-| `mlx-lm-turbo` | `feature/turboquant-kv-cache` | MLX server with prompt caching, KV quantization, disk cache |
-| `turboquant-mlx` | `main` | TurboQuant KV cache compression (K8+V2 mixed precision) |
-
-Both are installed editable in the venv so code changes take effect on next server restart.
-
-## Models
-
-Downloaded from Hugging Face via `huggingface-cli`:
-
-- `unsloth/Qwen3.6-27B-UD-MLX-6bit` (~28 GB) — dense, 6-bit quantized
-- `unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit` (~20 GB) — MoE, 4-bit quantized
-
-Stored in `~/.localllm/models/`.
+- **`servers.jsonc`** — all server definitions (model, port, args). For
+  `mtp-vision`, sampling is set explicitly to the official Qwen3.8
+  thinking-mode defaults (see `AGENTS.md` → Sampling Parameters; llama.cpp's
+  silent defaults silently differ).
+- **MLX KV-quant knobs** — when the MLX layer runs, they are CLI flags on the
+  `mlx-*` server entries (`--turbo-kv-bits`, `--kv-cache-quantization`,
+  ...). Reference config variants: `configs/{turboQuant,mixedQuant,vanilla}/`.
+- **opencode client config** — `~/.config/opencode/opencode.jsonc`; example in
+  `opencode.jsonc.example` (MLX providers only; needed only if the MLX layer
+  runs).
 
 ## Benchmarking
 
-The MLX server ships with a benchmark script at `mlx-lm-turbo/benchmarks/server_benchmark.py`. Run it against a running server:
+See `.opencode/skills/benchmark/SKILL.md`. The benchmark script lives in the
+sibling repo `~/mlx-lm-turbo/benchmarks/server_benchmark.py` and works against
+any OpenAI-compatible endpoint — run it with the MLX venv python
+(`~/mlx-lm-turbo/venv/bin/python3`) for its deps. Results live in
+`benchmarks/`.
 
-```bash
-# Single-threaded (1 concurrent request)
-python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-  --url http://localhost:30083/v1/chat/completions \
-  --api-key sk-local \
-  --model /Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --max-tokens 256 \
-  --concurrency 1 \
-  --total-requests 5
+## Tools
 
-# Multi-threaded (4 concurrent requests)
-python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-  --url http://localhost:30083/v1/chat/completions \
-  --api-key sk-local \
-  --model /Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --max-tokens 256 \
-  --concurrency 4 \
-  --total-requests 20 \
-  --output results.json
-```
+- `./snapshot-memory.sh <phase-label>` — memory + health snapshot
+  (llama.cpp and MLX processes, system memory, server ports, prompt cache);
+  appends to `~/.localllm/memory-snapshots.log`. RSS under-reports Metal
+  memory — treat as a floor.
+- `memory-budget.py` — KV/memory budget calculator for the parked MLX models
+  (planning tool for if the MLX layer is reactivated).
+- `tests/` + `make lint` / `make test` / `make check` — quality gates
+  (`check` verifies the llama-server binary, `servers.jsonc`, and every
+  configured model file).
 
-Outputs: time-to-first-token, tokens/sec (per-request and aggregate), and a per-second throughput chart. Results can be saved as JSON for comparison.
+## Historical docs
 
-## Historical Docs
-
-The repo contains detailed analysis from the prior llama.cpp era (KV cache mechanics, checkpoint behavior, memory profiling). Each document has a "Historical note" header explaining its relevance to the current MLX setup.
+Analysis docs from the llama.cpp evaluation and MLX characterization eras are
+kept with "Historical note" headers: `KV-CACHE-ANALYSIS.md`,
+`MULTI-SLOT-FINDINGS.md`, `MLX-CACHE-OOM-FINDINGS.md`,
+`MLX-CHARACTERIZATION-PLAN.md`, `TEST-2SLOT-REPORT.md`,
+`SINGLE-SLOT-CACHE-TEST.md`, `ARCHITECTURE-C.md`, `MEMORY-FORMULA.md`,
+`DUAL-MODEL-PROPOSAL.md`. They describe prior eras, not current operations.

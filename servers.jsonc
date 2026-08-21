@@ -11,6 +11,8 @@
       "port": 30080,
       "args": ["-c", "8192"]
     },
+    // PARKED: model file is not on disk (Qwen3.6-35B-A3B UD-Q6_K_XL GGUF was
+    // never downloaded here). Re-download or remove this entry before starting.
     "moe": {
       "backend": "llamacpp",
       "model": "~/.localllm/models/Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf",
@@ -94,6 +96,9 @@
         "--prompt-cache-dir", "/Users/michael/.localllm/prompt_cache"
       ]
     },
+    // PARKED: optiq/MLX+MTP experiment (model is an HF repo id that optiq
+    // resolves at start; the 2026-06-09 download was left incomplete, see
+    // ~/.localllm/optiq-download.log).
     "mlx-dense-mtp": {
       "backend": "optiq",
       "model": "mlx-community/Qwen3.6-27B-OptiQ-4bit",

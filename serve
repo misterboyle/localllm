@@ -17,14 +17,15 @@ json.dump(json.loads(raw), sys.stdout)
 "
 }
 
-# Expand ~ in paths
+# Expand leading ~ in paths
 expand_path() {
-  echo "$1" | sed "s|^~|$HOME|"
+  echo "${1/#\~/$HOME}"
 }
 
 # Get llama.cpp binary path (always absolute)
 llamacpp_bin() {
-  local default_bin="$(cd "$(dirname "$0")" && pwd)/build/bin/llama-server"
+  local default_bin
+  default_bin="$(cd "$(dirname "$0")" && pwd)/build/bin/llama-server"
   local bin
   bin=$(cat "$CONF" | json | python3 -c "import json,sys,os; print(os.path.expanduser(json.load(sys.stdin).get('llamacpp_bin','$default_bin')))")
   # Resolve relative paths against script directory
@@ -119,7 +120,11 @@ do_start() {
   local targets=("$@")
 
   if [ ${#targets[@]} -eq 0 ]; then
-    targets=($(list_servers))
+    targets=()
+    local srv
+    while IFS= read -r srv; do
+      targets+=("$srv")
+    done < <(list_servers)
   fi
 
   for name in "${targets[@]}"; do
@@ -174,7 +179,11 @@ do_stop() {
   local targets=("$@")
 
   if [ ${#targets[@]} -eq 0 ]; then
-    targets=($(list_servers))
+    targets=()
+    local srv
+    while IFS= read -r srv; do
+      targets+=("$srv")
+    done < <(list_servers)
   fi
 
   for name in "${targets[@]}"; do
@@ -224,7 +233,11 @@ do_status() {
   local targets=("$@")
 
   if [ ${#targets[@]} -eq 0 ]; then
-    targets=($(list_servers))
+    targets=()
+    local srv
+    while IFS= read -r srv; do
+      targets+=("$srv")
+    done < <(list_servers)
   fi
 
   echo "Server status:"

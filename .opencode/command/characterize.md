@@ -1,41 +1,36 @@
 ---
-description: Characterize MoE model performance and memory
+description: Characterize mtp-vision performance and memory (the daily driver)
 model: opencode/kimi-k2.5
 ---
 
-Run a full characterization of the MoE model: memory, speed, and quality. This determines whether the model is suitable as a compute engine for multi-agent factories.
+Run a full characterization of `mtp-vision` (Qwen3.8-27B + MTP spec decode,
+llama.cpp, port 30082): memory, speed, and accept rate. This determines
+whether the daily driver is holding up as the context lengths grow.
 
 ## Steps
 
-1. **Memory analysis**
+1. **Memory**
    ```bash
-   python3 memory-budget.py --model moe
-   python3 memory-budget.py --model both
-   ./snapshot-memory.sh running
+   ./snapshot-memory.sh baseline
    ```
+   Note: RSS under-reports Metal memory — use PhysMem via
+   `top -l 1 -stats pid | grep PhysMem` for the process's real footprint.
 
-2. **Decode speed benchmarks**
-   Read port and model path from `~/.localllm/models.jsonc`:
-   ```bash
-   PORT=30083  # from models.jsonc
-   MODEL=~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit  # from models.jsonc
+2. **Decode speed at growing context** (concurrency 1)
+   Read port/model from `servers.jsonc`. Use the context-length suite in
+   `skills/benchmark/SKILL.md` (baseline / 10k / 50k / 100k), via
+   `~/mlx-lm-turbo/benchmarks/server_benchmark.py` with
+   `~/mlx-lm-turbo/venv/bin/python3`.
 
-   python3 mlx-lm-turbo/benchmarks/server_benchmark.py \
-     --url "http://localhost:$PORT/v1/chat/completions" \
-     --api-key sk-local \
-     --model "$MODEL" \
-     --max-tokens 256 --concurrency 1 --total-requests 5
-   ```
+3. **MTP accept rate** — check the server log (`mtp-vision.log`) for the
+   spec-decode accept stats during the bench runs; MTP is the main TG lever,
+   so report acceptance alongside raw TG.
 
-3. **Multi-concurrency benchmarks**
-   Run at concurrency 4, 8, and 12. Save results as JSON.
+4. **Quality spot-check** — send 2–3 representative agentic prompts and
+   verify output quality is acceptable (thinking mode on, reasoning_effort
+   xhigh per servers.jsonc).
 
-4. **Quality check**
-   Send a few representative prompts and verify output quality is acceptable.
-
-5. **Document findings**
-   Save to `MOE-CHARACTERIZATION.md` with:
-   - Memory profile (fixed, KV, headroom)
-   - Decode speed (single and multi-concurrency)
-   - TTFT at each concurrency level
-   - Any issues or anomalies observed
+5. **Document findings** — save to `benchmarks/characterization-<date>.md`
+   with: memory profile (RSS + PhysMem, KV estimate), TG/TTFT per context
+   depth, MTP acceptance, any anomalies. Compare against the previous
+   characterization.

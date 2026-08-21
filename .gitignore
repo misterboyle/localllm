@@ -1,7 +1,3 @@
-# Per-user config (machine-specific)
-models.conf
-/models.jsonc
-
 # Logs
 *.log
 

@@ -1,48 +1,49 @@
 ---
-description: Benchmark MoE vs 27B on the same tasks
+description: Benchmark engines head-to-head (llama.cpp mtp-vision vs MLX)
 model: opencode/kimi-k2.5
 ---
 
-Run the same prompts through both models and compare outputs.
+Run the same prompts through both dense engines and compare. Default pairing:
+`mtp-vision` (llama.cpp, Qwen3.8) vs `mlx-dense` (MLX, Qwen3.6).
+
+**Caveat:** the engines are on different model generations (Qwen3.8 vs
+Qwen3.6) and quant formats — compare the *systems* (engine + stack), and say
+so in the writeup. For a strict same-model comparison, both servers must run
+the same model — check `servers.jsonc` before claiming model parity.
 
 ## Setup
 
-Read ports from `~/.localllm/models.jsonc`. Make sure both servers are running:
+Read ports/models from `servers.jsonc`. Make sure both servers are running:
 
 ```bash
-# Replace ports with values from models.jsonc
-curl http://localhost:<moe-port>/health
-curl http://localhost:<dense-port>/health
+curl http://localhost:30082/health   # mtp-vision (llama.cpp)
+curl http://localhost:30090/health   # mlx-dense (MLX)
 ```
+
+Do **not** silently start mtp-vision (it hosts the opencode assistant).
 
 ## Procedure
 
-1. Pick 3-5 representative prompts (code gen, debugging, reasoning, multi-step)
-2. Send each prompt to both models with identical parameters
+1. Pick 3–5 representative prompts (code gen, debugging, reasoning, multi-step)
+2. Send each prompt to both engines with identical sampling (Qwen thinking
+   defaults: temp 1.0, top_p 0.95, top_k 20)
 3. Compare:
    - Output quality (correctness, completeness, style)
-   - Response length
-   - Any systematic differences
+   - TG (tokens/sec) decode speed
+   - TTFT (prompt processing) at a medium context (~16–32K)
+   - Response length / any systematic differences
 
 ## Example
 
-Read model paths and ports from `~/.localllm/models.jsonc`:
-
 ```bash
-MOE_PORT=30083
-DENSE_PORT=30090
-MOE_MODEL=~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit
-DENSE_MODEL=~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit
+LLAMA_URL="http://localhost:30082/v1/chat/completions"
+MLX_URL="http://localhost:30090/v1/chat/completions"
 
-# MoE response
-curl -s "http://localhost:$MOE_PORT/v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -d "{\"model\":\"$MOE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a Python function to merge two sorted arrays\"}],\"max_tokens\":512,\"temperature\":0.0}"
-
-# Dense response
-curl -s "http://localhost:$DENSE_PORT/v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -d "{\"model\":\"$DENSE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a Python function to merge two sorted arrays\"}],\"max_tokens\":512,\"temperature\":0.0}"
+for URL in "$LLAMA_URL" "$MLX_URL"; do
+  curl -s "$URL" \
+    -H "Content-Type: application/json" \
+    -d '{"messages":[{"role":"user","content":"Write a Python function to merge two sorted arrays"}],"max_tokens":512,"temperature":1.0,"top_p":0.95,"top_k":20}'
+done
 ```
 
-4. Save comparison to `benchmarks/comparison-<date>.md`
+4. Save comparison to `benchmarks/comparison-<date>.md`.

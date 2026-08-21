@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Memory budget calculator for MLX models.
+"""Memory budget calculator for the (parked) MLX layer.
 
 Reads model config to get architecture params, then computes KV cache costs
-for various concurrency scenarios. Model definitions come from the default
-config in models.jsonc.example — override with --models-dir if different.
+for various concurrency scenarios. MODEL_DEFS below are hardcoded to the
+Qwen3.6 MLX models in ~/.localllm/models/ — use this for planning the MLX
+layer if it is reactivated (llama.cpp is the current daily driver).
 
 Usage:
     python3 memory-budget.py                    # 27B (default)

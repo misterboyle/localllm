@@ -12,7 +12,7 @@ fi
 
 fail=0
 scripts=(
-  "$ROOT_DIR/start-server.sh"
+  "$ROOT_DIR/serve"
   "$ROOT_DIR/snapshot-memory.sh"
 )
 

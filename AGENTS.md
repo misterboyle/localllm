@@ -5,12 +5,29 @@
 This repo is the **local compute engine for multi-agent software development factories**. It characterizes and optimizes running the best local models on Apple Silicon to power agent orchestration frameworks (e.g., gastown.ai, gas city) entirely on-device.
 
 Everything in this repo serves that goal:
-- **Server scripts** — launch and manage MLX inference servers as OpenAI-compatible endpoints
+- **Server scripts** — launch and manage inference servers (llama.cpp and MLX)
+  as OpenAI-compatible endpoints via `./serve`
 - **Benchmarking** — measure throughput, latency, and memory at various concurrency levels
 - **Memory analysis** — understand KV cache costs to maximize concurrent agent conversations
-- **Configuration** — tune models, quantization, and cache settings for optimal multi-agent performance
+- **Configuration** — tune models, quantization, and cache settings for optimal multi-agent
+  performance
 
 Code conventions for shell scripts, Python, and configuration files.
+
+## Operations (how the servers actually run)
+
+- **`servers.jsonc` in this repo is the only server config.** The `./serve`
+  launcher reads only that file. Daily ops: `./serve status`,
+  `./serve start [server...]`, `./serve stop [server...]`.
+- **`~/.localllm` is data-only** (models, pids, logs, prompt cache, venvs).
+  Never create or expect config files there — the legacy
+  `~/.localllm/models.jsonc` flow was removed 2026-08-21.
+- **Production server is `mtp-vision`** (llama.cpp, port 30082, Qwen3.8-27B
+  with MTP spec decode) — the opencode assistant runs on it. There is no
+  `restart` subcommand: restarting = `./serve stop mtp-vision && ./serve start mtp-vision`,
+  and it kills the active opencode session. Do it at session end.
+- All other servers (dense/moe llama.cpp; mlx-* MLX layer) are parked. The
+  MLX layer migrates to Qwen3.8 only if its use resumes.
 
 ## Shell Scripts
 
@@ -94,9 +111,10 @@ Code conventions for shell scripts, Python, and configuration files.
 
 ### Example Files
 
-- `.example` suffix: `models.jsonc.example`, `opencode.jsonc.example`
-- `make config` copies examples to user locations, skips if exists
+- `.example` suffix: `opencode.jsonc.example` (MLX providers for the opencode
+  client config; the production mtp-vision server is configured separately)
 - Examples should be complete and functional as-is
+- `servers.jsonc` lives in the repo — there is no copy-to-user-location flow
 
 ### KV Cache Quantization Patterns
 
@@ -123,10 +141,10 @@ The MLX server supports two KV cache compression strategies. Agents should know 
 - No KV compression — full FP16 KV cache
 - Config variant: `configs/vanilla/models.jsonc`
 
-To switch variants, copy the desired config into `~/.localllm/models.jsonc`:
-```bash
-cp configs/mixedQuant/models.jsonc ~/.localllm/models.jsonc
-```
+The variant files under `configs/` are **reference only** — the current
+launcher reads only `servers.jsonc`, where the same knobs appear as CLI flags
+on the `mlx-*` server entries (e.g. `--turbo-kv-bits 3`,
+`--kv-cache-quantization 8,4`).
 
 ### Sampling Parameters
 
@@ -142,8 +160,8 @@ Sampling defaults are aligned with [Unsloth Qwen3.8 recommendations](https://uns
 - `presence_penalty: 1.5`, `repetition_penalty: 1.0`
 
 **Config locations:**
-- llama.cpp servers: `servers.jsonc` → per-server `args` (`--temp`, `--top-p`, `--top-k`, `--min-p`)
-- MLX servers: `models.jsonc` → `defaults.temperature`, `defaults.topP`, `defaults.topK`
+- All servers: `servers.jsonc` → per-server `args` (llama.cpp flags like
+  `--temp`, `--top-p`, `--top-k`, `--min-p`; MLX flags like `--temp`, `--top-p`, `--top-k`)
 - Opencode: currently sets no sampling params — server defaults apply
 
 **Notes:**

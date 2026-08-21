@@ -23,11 +23,8 @@ python3 memory-budget.py --model both
 ## Memory Snapshot
 
 ```bash
-# Check running server memory
+# Check running server memory (label the phase)
 ./snapshot-memory.sh running
-
-# Full memory report
-./snapshot-memory.sh
 ```
 
 ## Reference Numbers (default config, 128GB M5 Max)

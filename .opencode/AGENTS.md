@@ -4,104 +4,76 @@ See [AGENTS.md](../AGENTS.md) for code style conventions.
 
 ## Purpose
 
-This repo is the **local compute engine for multi-agent software development factories**. It provides the inference layer that lets agent orchestration frameworks (gastown.ai, gas city, etc.) run entirely on Apple Silicon.
+This repo is the **local compute engine for multi-agent software development
+factories**. It provides the inference layer that lets agent orchestration
+frameworks (gastown.ai, gas city, etc.) run entirely on Apple Silicon — and
+hosts the `mtp-vision` server that runs the opencode assistant itself.
 
-**Your job:** help characterize, optimize, and maintain the MLX server stack so it can handle maximum concurrent agent conversations with acceptable latency and memory usage.
+**Your job:** characterize, optimize, and maintain the inference servers so
+the daily driver (mtp-vision) stays fast and the parked layers (MLX) stay
+workable.
 
 ## Configuration
 
-All server settings are in `~/.localllm/models.jsonc` (generated from `models.jsonc.example`). **Read this file** to get actual ports, model paths, and concurrency settings — the values below are from the default config and may differ.
+All server settings are in **`servers.jsonc` in this repo** — the only file
+`./serve` reads. **Read it** to get actual ports, model paths, and args.
+
+`~/.localllm` is **data-only**: models (`models/`), pidfiles (`pids/`), logs,
+prompt cache, venvs. Never look for or create config there — the old
+`~/.localllm/models.jsonc` flow was removed 2026-08-21.
 
 ## Architecture
 
-MLX models running as independent `mlx_lm.server` processes on localhost. Default config:
+| Server | Type | Backend | Port | Status |
+|--------|------|---------|------|--------|
+| mtp-vision | Dense 27B, Qwen3.8 UD-Q4_K_XL + mmproj + MTP spec decode | llama.cpp (`~/llama.cpp-turbo`, `mtp-vanilla`) | 30082 | **Production** — opencode assistant |
+| dense | Dense 27B, Qwen3.6 UD-Q6_K_XL | llama.cpp | 30080 | parked |
+| moe | MoE 35B-A3B, Qwen3.6 UD-Q6_K_XL | llama.cpp | 30081 | parked — model not on disk |
+| mlx-dense | Dense 27B, Qwen3.6 UD-MLX-4bit | MLX (`~/mlx-lm-turbo`) | 30090 | parked |
+| mlx-moe | MoE 35B-A3B, Qwen3.6 UD-MLX-4bit | MLX (`~/mlx-lm-turbo`) | 30083 | parked |
+| mlx-moe-8bit | MoE 35B-A3B, Qwen3.6 MLX-8bit | MLX (`~/mlx-lm-turbo`) | 30084 | parked |
+| mlx-dense-mtp | Dense 27B, Qwen3.6 OptiQ-4bit, MTP | optiq (MLX) | 30091 | parked (model incomplete) |
 
-| Server | Type | Quant | Default Port | Role |
-|--------|------|-------|-------------|------|
-| MoE | MoE (3B active) | 4-bit | 30083 | Primary — fast decode, worker tasks |
-| Dense | Dense | 4-bit | 30090 | Disabled by default — reasoning comparison |
-
-Both use TurboQuant KV cache compression (K8+V2 mixed precision).
+Daily driver: mtp-vision. The MLX layer migrates to Qwen3.8 only if its use
+resumes (decision 2026-08-21).
 
 ## Server Management
 
 ```bash
-# Start/stop servers
-./start-server.sh
+# Run the servers — this is the only way
+./serve status
+./serve start mtp-vision
+./serve stop mtp-vision
 
-# Check health (ports from models.jsonc)
-curl http://localhost:<moe-port>/health
-curl http://localhost:<dense-port>/health
+# Health
+curl http://localhost:30082/health
 
-# Memory snapshot
+# Memory snapshot (llama.cpp + MLX processes, ports, prompt cache)
 ./snapshot-memory.sh running
 ```
 
+**Footgun:** mtp-vision has no restart subcommand, and the opencode assistant
+runs on it. Restarting (`./serve stop mtp-vision && ./serve start mtp-vision`)
+kills the active session — do it at session end only.
+
 ## Benchmarking
 
-Run benchmarks against a live server. Read port and model path from `~/.localllm/models.jsonc`:
+Benchmarks hit live servers via
+`~/mlx-lm-turbo/benchmarks/server_benchmark.py` (works against any
+OpenAI-compatible endpoint). See `skills/benchmark/SKILL.md` for the full
+playbook (context-length suite for dense, concurrency scaling for MoE).
 
-```bash
-# mlx-lm-turbo is a SIBLING repo at ~/mlx-lm-turbo/ (NOT a subdirectory of this repo)
-# Use absolute path or ~/mlx-lm-turbo/ — relative paths from this CWD will fail
-~/mlx-lm-turbo/venv/bin/python3 ~/mlx-lm-turbo/benchmarks/server_benchmark.py \
-  --url http://localhost:30083/v1/chat/completions \
-  --api-key sk-local \
-  --model ~/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit \
-  --max-tokens 256 --concurrency 1 --total-requests 5
-```
+**Footgun:** `mlx-lm-turbo/` is a sibling repo at `~/mlx-lm-turbo/`, NOT a
+subdirectory of this repo. Use absolute paths — relative paths from this CWD
+will fail. Run with the MLX venv python (`~/mlx-lm-turbo/venv/bin/python3`)
+for its deps. Results go in `benchmarks/`.
 
-**Footgun:** `mlx-lm-turbo/` is a sibling repo at `/Users/michael/mlx-lm-turbo/`, NOT a subdirectory of this repo. Glob searches from this CWD (`/Users/michael/localllm/`) will not find it. Always use absolute paths or `~/mlx-lm-turbo/`.
+## Memory
 
-## Memory Budget (MoE, default config on 128GB M5 Max)
+- `./snapshot-memory.sh <phase>` — live snapshot; RSS under-reports Metal
+  memory (treat as a floor).
+- `python3 memory-budget.py --model both` — KV-budget planning for the parked
+  MLX models.
 
-These are reference numbers for the default setup. Actual values depend on model and machine.
-
-- Fixed: 39 GB (weights 26 + compute 8 + overhead 5)
-- KV budget: 74 GB of 128 GB system
-- Active KV: 20 KB/token (fp16), 6.9 KB/token (K8,V2 cached)
-- Max 13 concurrent conversations at 262K context
-- Heavy workload (6 active @ 136K avg): 58 GB total, 70 GB margin
-
-## Memory Budget (27B Dense, default config on 128GB M5 Max)
-
-- Fixed: 44 GB (weights 31 + compute 8 + overhead 5)
-- KV budget: 69 GB of 128 GB system
-- Active KV: 64 KB/token (fp16), 22 KB/token (K8,V2 cached)
-- Max 3 concurrent conversations at 262K context
-
-## Python
-
-- Scripts in this repo (`memory-budget.py`): use system `python3` (stdlib only)
-- Scripts in `mlx-lm-turbo/` (benchmarks, server): use `~/mlx-lm-turbo/venv/bin/python3`
-- **Never** use system `python3` for mlx-lm-turbo scripts — they require aiohttp, numpy, and other venv packages
-
-## Key Files
-
-- `~/.localllm/models.jsonc` — server config (enable/disable, ports, concurrency)
-- `benchmarks/` — benchmark results (bench-*.json) and tools
-- `benchmarks/compare.py` — comparison tool for benchmark results
-- `memory-budget.py` — memory calculator for both models
-- `~/mlx-lm-turbo/` (SIBLING REPO) — MLX server fork with TurboQuant support
-- `~/mlx-lm-turbo/benchmarks/server_benchmark.py` — server benchmark tool
-- `~/turboquant-mlx/` (SIBLING REPO) — KV cache compression library
-
-## Repo Layout
-
-This repo (`/Users/michael/localllm/`) is the configuration and analysis repo. The compute tools live in sibling repos:
-
-| Repo | Path | Purpose |
-|------|------|---------|
-| localllm | `/Users/michael/localllm/` | Config, benchmarks, analysis |
-| mlx-lm-turbo | `/Users/michael/mlx-lm-turbo/` | Server fork, benchmark scripts |
-| turboquant-mlx | `/Users/michael/turboquant-mlx/` | KV cache compression |
-
-**Footgun:** Glob searches from this CWD will NOT find files in sibling repos. Use absolute paths.
-
-## Skills
-
-Skills are LOCAL to this repo at `.opencode/skills/` (NOT global config). Do not modify `~/.opencode/` — that's the global opencode directory.
-
-## Historical Docs
-
-The repo contains detailed analysis from the prior llama.cpp era (KV cache mechanics, checkpoint behavior, memory profiling). See `MLX-CHARACTERIZATION-PLAN.md` for the current MLX evaluation plan.
+Reference numbers for the MLX layer (128GB M5 Max): MoE 35B-A3B fixed ~39 GB,
+KV ~20 KB/token active; 27B dense fixed ~44 GB, KV ~64 KB/token active.

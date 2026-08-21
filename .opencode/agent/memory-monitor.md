@@ -16,4 +16,6 @@ Check memory with:
 
 Alert if total memory exceeds 110 GB or if any single server exceeds 60 GB.
 
-Note: server ports are configurable in `~/.localllm/models.jsonc` — read them from there if you need to check health endpoints.
+Note: server ports are defined in `servers.jsonc` in this repo — read them from
+there if you need to check health endpoints. `~/.localllm` is data-only
+(models, pids, logs, prompt cache, venvs); there is no config there.

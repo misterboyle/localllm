@@ -7,9 +7,9 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 fail=0
 
-for py in "$ROOT_DIR"/*.py; do
+for py in "$ROOT_DIR"/*.py "$SCRIPT_DIR"/*.py; do
   [ -f "$py" ] || continue
-  name="$(basename "$py")"
+  name="$(basename "$(dirname "$py")")/$(basename "$py")"
 
   if python3 -m py_compile "$py" 2>/dev/null; then
     echo "  $name: valid syntax"
