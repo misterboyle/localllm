@@ -72,8 +72,17 @@ build_llamacpp_cmd() {
   port=$(server_field "$name" port)
   args=$(server_args "$name")
 
+  # per-server "bin" overrides global llamacpp_bin (e.g. flash-next-offload -> build-direct)
   local bin
-  bin=$(llamacpp_bin)
+  bin=$(server_field "$name" bin)
+  if [ -n "$bin" ]; then
+    bin=$(expand_path "$bin")
+    if [[ "$bin" != /* ]]; then
+      bin="$(cd "$(dirname "$0")" && pwd)/$bin"
+    fi
+  else
+    bin=$(llamacpp_bin)
+  fi
 
   local cmd="$bin -m '$model' --port $port --host 127.0.0.1 $args"
 
@@ -139,6 +148,23 @@ do_start() {
     if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
       echo "$name already running on port $port (PID $(cat "$pidfile"))"
       continue
+    fi
+
+    # Port collision: a DIFFERENT server is live on this port. Same-port profiles
+    # (e.g. flash-next / flash-next-offload) are mutually exclusive — 128 GB-class
+    # models leave zero RAM headroom for doubles (2026-09-01 incident).
+    if [ "${FORCE:-0}" != "1" ]; then
+      local other s_pidfile
+      for other in $(list_servers); do
+        [ "$other" = "$name" ] && continue
+        [ "$(server_field "$other" port)" = "$port" ] || continue
+        s_pidfile="$PID_DIR/${other}.pid"
+        if [ -f "$s_pidfile" ] && kill -0 "$(cat "$s_pidfile")" 2>/dev/null; then
+          echo "REFUSED: $other is running on port $port (PID $(cat "$s_pidfile"))."
+          echo "  Stop it first: ./serve stop $other   (or FORCE=1 to override)"
+          exit 1
+        fi
+      done
     fi
 
     echo "Starting $name on port $port ($backend)..."
@@ -261,7 +287,14 @@ case "${1:-help}" in
   start)   do_start "${@:2}" ;;
   stop)    do_stop "${@:2}" ;;
   status)  do_status "${@:2}" ;;
-  *)       echo "Usage: $0 {start|stop|status} [server1] [server2] ..."
+  cmd)     name="${2:?usage: serve cmd <server>}"; backend=$(server_field "$name" backend)
+           if [ "$backend" = "mlx" ]; then build_mlx_cmd "$name"
+           elif [ "$backend" = "optiq" ]; then build_optiq_cmd "$name"
+           else build_llamacpp_cmd "$name"; fi; echo ;;
+  *)       echo "Usage: $0 {start|stop|status|cmd} [server1] [server2] ..."
+           echo ""
+           echo "  cmd <server> — print the resolved command line without starting"
+           echo "  FORCE=1 start — skip same-port collision guard"
            echo ""
            echo "Available servers:"
            list_servers | sed 's/^/  /'

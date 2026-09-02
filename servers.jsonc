@@ -71,6 +71,34 @@
         "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}"
       ]
     },
+    // PLE SSD offload A/B twin of the profile above (--lazy-mode on-direct, PR #28136).
+    // Same port ON PURPOSE: mutually exclusive with flash-next, serve's collision
+    // guard enforces it. Use switch-flashserver.sh (switching kills the assistant).
+    // "bin" is per-server — build-direct @ 905557969, NOT the global llamacpp_bin.
+    // Same-binary control: temporarily drop the two offload flags below to see
+    // --lazy-mode auto on this same commit. Rollback of the test = start flash-next.
+    // KEEP IN SYNC: args mirror flash-next above, plus the offload flags.
+    "flash-next-offload": {
+      "backend": "llamacpp",
+      "bin": "~/llama.cpp-turbo/build-direct/bin/llama-server",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+      "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/mmproj-F16.gguf",
+      "port": 30085,
+      "args": [
+        "-np", "1",
+        "-ngl", "99",
+        "-c", "262144",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--min-p", "0.0",
+        "--image-min-tokens", "1024",
+        "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}",
+        // --- offload trial flags (the whole point) ---
+        "-lv", "4",
+        "--lazy-mode", "on-direct"
+      ]
+    },
     "mlx-dense": {
       "backend": "mlx",
       "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit",
