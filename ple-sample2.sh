@@ -16,7 +16,7 @@ while true; do
     /occupied by compressor/{c=n($2)}
     END{printf "%.1f %.1f %.1f %.1f %.1f %.1f %.1f", (w+a+c)*16384/2^30, a*16384/2^30, i*16384/2^30, f*16384/2^30, w*16384/2^30, p*16384/2^30, s*16384/2^30}')"
   read -r internal external <<< "$(sysctl -n vm.page_pageable_internal_count vm.page_pageable_external_count | \
-    awk '{printf "%.1f %.1f", $1*16384/2^30, $2*16384/2^30}')"
+    awk '{v[NR]=$1} END{printf "%.1f %.1f", v[1]*16384/2^30, v[2]*16384/2^30}')"
   sw=$(sysctl -n vm.swapusage | awk '{for(j=1;j<=NF;j++) if($j=="used") print $(j+2)}' | tr -d M)
   pid=$(pgrep -f 'llama-server.*30085' | head -1); rss=NA; res=NA
   if [ -n "$pid" ]; then
