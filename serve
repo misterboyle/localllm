@@ -178,6 +178,12 @@ do_start() {
       cmd=$(build_llamacpp_cmd "$name")
     fi
 
+    # Rotate: each server start begins a fresh log; keep one archive (2026-09-04:
+    # spec-decode error spam grew one session's log to 2 MB / 27k lines).
+    if [ -f "$logf" ] && [ -s "$logf" ]; then
+      mv -f "$logf" "${logf}.1"
+    fi
+
     echo "$cmd" >> "$logf" 2>&1
     eval "exec $cmd" >> "$logf" 2>&1 &
     echo $! > "$pidfile"
