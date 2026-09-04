@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Switch the flash server on 30085 between profiles in servers.jsonc:
 #   ./switch-flashserver.sh flash-next-offload --yes   # PLE on-direct test (build-direct)
+#   ./switch-flashserver.sh flash-next-mtp --yes       # MTP trial (PR #28243 + shared-Q8_0 head)
 #   ./switch-flashserver.sh flash-next --yes           # vanilla baseline / rollback (build/bin)
 # Only ever ONE server on this box (zero RAM headroom; serve's collision guard
 # is the backstop). SWITCHING KILLS THE ASSISTANT SESSION - 30085 serves it.
@@ -9,8 +10,8 @@ set -u
 cd ~/localllm
 
 TARGET="${1:-}"
-[ "$TARGET" = "flash-next" ] || [ "$TARGET" = "flash-next-offload" ] || {
-  echo "usage: $0 <flash-next|flash-next-offload> --yes"; exit 1; }
+[ "$TARGET" = "flash-next" ] || [ "$TARGET" = "flash-next-offload" ] || [ "$TARGET" = "flash-next-mtp" ] || {
+  echo "usage: $0 <flash-next|flash-next-offload|flash-next-mtp> --yes"; exit 1; }
 [ "${2:-}" = "--yes" ] || {
   echo "This stops whatever flash server is running and starts $TARGET (~3 min load)."
   echo "The assistant session served by 30085 dies. Re-run with: $0 $TARGET --yes"
@@ -21,7 +22,7 @@ echo "== resolve check =="
 ./serve cmd "$TARGET" | tr ' ' '\n' | grep -E 'llama-server$|lazy-mode|on-direct' | head -4
 
 echo "== stopping any flash server =="
-./serve stop flash-next flash-next-offload >/dev/null 2>&1
+./serve stop flash-next flash-next-offload flash-next-mtp >/dev/null 2>&1
 while pgrep -f 'llama-server.*30085' >/dev/null; do sleep 2; done
 curl -sf -m 2 http://127.0.0.1:30085/health >/dev/null && { echo "port still answering, aborting"; exit 1; }
 sleep 5   # Metal deferred-release grace, per 2026-09-01 incident

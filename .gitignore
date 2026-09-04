@@ -7,6 +7,7 @@ models/*.pid
 
 # Models (large files, not tracked)
 *.gguf
+mtp-heads/
 
 # Claude artifacts
 .claude/

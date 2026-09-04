@@ -46,8 +46,8 @@
     // vs Q4_K_XL's 93.5%. Q4_K_XL files still on disk for rollback.
     // Context 128K (262K native; only 12 QSA layers grow KV).
     // Sampling: official Qwen3.8 thinking-mode defaults, same as mtp-vision.
-    // TODO: test --spec-type draft-mtp once qwen4exp supports it (4B MTP head
-    // embedded; "speculative decoding not supported by this context" 2026-08-28).
+    // draft-mtp: NOT on this vanilla binary yet ("speculative decoding not
+    // supported by this context" 2026-08-28) — see flash-next-mtp below.
     "flash-next": {
       "backend": "llamacpp",
       "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
@@ -97,6 +97,39 @@
         // --- offload trial flags (the whole point) ---
         "-lv", "4",
         "--lazy-mode", "on-direct"
+      ]
+    },
+    // MTP trial (2026-09-04): experimental track = PR ggml-org/llama.cpp#28243
+    // (danielhanchen, branch qwen4exp/mtp) built at ~/llama.cpp-mtp-src. Does
+    // NOT include #28136 -> this one is lazy-mmap like vanilla flash-next.
+    // Rollback = ./switch-flashserver.sh flash-next. Head: shared-Q8_0 2.6GB
+    // (borrows embed+lm_head from main model; fit at startup prints ONE
+    // borrow_shared_tensor error line then works - expected, -c/-ngl below are
+    // explicit so the mis-measure cannot bite). Acceptance visible in log:
+    // "draft acceptance = ...". n-max 2 = unsloth's recommendation for this
+    // model; try 3-5 if acceptance runs high. No on-direct here; if it OOMs
+    // at load: head -> shared-Q4_K_M (1.8GB), then -c 131072.
+    "flash-next-mtp": {
+      "backend": "llamacpp",
+      "bin": "~/llama.cpp-mtp-src/build-mtp/bin/llama-server",
+      "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+      "mmproj": "~/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/mmproj-F16.gguf",
+      "port": 30085,
+      "args": [
+        "-np", "1",
+        "-ngl", "99",
+        "-c", "262144",
+        // NB: absolute path — serve does NOT expand ~ inside args (bin/model yes)
+        "-md", "/Users/michael/localllm/mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+        "--spec-type", "draft-mtp",
+        "--spec-draft-n-max", "2",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--min-p", "0.0",
+        "--image-min-tokens", "1024",
+        "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}",
+        "-lv", "4"
       ]
     },
     "mlx-dense": {
