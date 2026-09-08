@@ -68,11 +68,15 @@ stop_arm() {
 }
 
 session() {  # wd title outfile timeout prompt  -> exits with opencode rc (124=timeout)
+  # NOTE: -m must be explicit — `opencode run` splits provider/model on the FIRST
+  # slash, so the configured default model (ID is an absolute path) arrives
+  # mangled (ProviderModelNotFoundError). "llama-flash/" + path works.
   python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
 import subprocess, sys
 wd, title, out, tout, prompt = sys.argv[1:6]
+model = "llama-flash/" + "/Users/michael/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
 try:
-    p = subprocess.run(["opencode", "run", "--dir", wd, "--auto", "--print-logs",
+    p = subprocess.run(["opencode", "run", "-m", model, "--dir", wd, "--auto", "--print-logs",
                         "--title", title, prompt],
                        capture_output=True, text=True, timeout=int(tout), start_new_session=True)
     open(out, "w").write(p.stdout + "\n--STDERR--\n" + p.stderr)
