@@ -72,7 +72,8 @@ session() {  # wd title outfile timeout prompt  -> exits with opencode rc (124=t
 import subprocess, sys
 wd, title, out, tout, prompt = sys.argv[1:6]
 try:
-    p = subprocess.run(["opencode", "run", "--dir", wd, "--auto", "--title", title, prompt],
+    p = subprocess.run(["opencode", "run", "--dir", wd, "--auto", "--print-logs",
+                        "--title", title, prompt],
                        capture_output=True, text=True, timeout=int(tout), start_new_session=True)
     open(out, "w").write(p.stdout + "\n--STDERR--\n" + p.stderr)
     sys.exit(p.returncode)
@@ -80,6 +81,19 @@ except subprocess.TimeoutExpired:
     open(out, "a").write("\n--TIMEOUT--\n")
     sys.exit(124)
 PY
+}
+
+warmup_server() {  # first real request compiles Metal graphs — do it via curl, not opencode
+  log "warmup: first chat completion (graph compile) ..."
+  local w=0
+  until curl -sf -m 180 http://127.0.0.1:$PORT/v1/chat/completions \
+        -H 'Content-Type: application/json' \
+        -d '{"messages":[{"role":"user","content":"ping"}],"max_tokens":4}' \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('choices') else 1)"; do
+    sleep 5; w=$((w + 5))
+    [ "$w" -ge 300 ] && { log "warmup failed — server rejects chat completions"; return 1; }
+  done
+  log "warmup done (${w}s)"
 }
 
 log "=== real-agent DOE start; stopping production flash-next-mtp ==="
@@ -99,13 +113,24 @@ for R in 1 2 3; do
       continue
     fi
     if [ "$SMOKED" = 0 ]; then  # gate: scripted opencode works against this server
+      warmup_server || { log "aborting: warmup"; exit 2; }
       mkdir -p /tmp/doe-smoke-gate
-      session /tmp/doe-smoke-gate doe-smoke /tmp/doe-smoke.out 300 "Reply with exactly one word: READY"
-      if ! grep -q READY /tmp/doe-smoke.out; then
-        log "SMOKE FAILED — aborting DOE (see /tmp/doe-smoke.out)"
+      GATE_OK=0
+      for try in 1 2 3; do
+        session /tmp/doe-smoke-gate "doe-smoke-$try" /tmp/doe-smoke.out 300 \
+          "Reply with exactly one word: READY"
+        if grep -q READY /tmp/doe-smoke.out; then GATE_OK=1; break; fi
+        log "smoke attempt $try failed; retrying in 15s"
+        sleep 15
+      done
+      if [ "$GATE_OK" != 1 ]; then
+        log "SMOKE FAILED x3 — aborting. smoke output:"
+        tail -40 /tmp/doe-smoke.out
+        log "last arm-server lines:"
+        tail -20 "$LOGF"
         exit 2
       fi
-      log "smoke passed"
+      log "smoke passed (attempt $try)"
       SMOKED=1
     fi
     WORK="$RUNS/work"
