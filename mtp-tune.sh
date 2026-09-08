@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Sweep --spec-draft-n-max for flash-next-mtp (unsloth docs: "try 1 through 6,
-# whichever is fastest is hardware-dependent"). Runs llama-server DIRECTLY on a
+# Sweep --spec-draft-n-max for flash-next-mtp. Unsloth guidance (docs ask-API,
+# 2026-09-08): n_max=2 is the "best starting point, works best in most setups";
+# sweep 1..6 since fastest is hardware-dependent; they caution >2 because
+# acceptance drops 83%->50% at n=4 (greedy, short ctx, GPU). Their own
+# qwen3.8-next llama-server example ships n_max=5 — docs contradict; 5 is in
+# the ladder to test their advertised config. Runs llama-server DIRECTLY on a
 # private port with synthetic prompts — this session's server is NOT involved.
 #
 # RUN ONLY WITH NO PRODUCTION FLASH SERVER UP (09-01 memory-incident rule):
@@ -19,7 +23,7 @@ LOG_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROMPT_DIR="${TMPDIR:-/tmp}/mtp-tune"
 PORT=30087
 CSV="$LOG_DIR/mtp-tune.csv"
-NMAXES="${MTP_TUNE_NMAXES:-1 2 3 4}"
+NMAXES="${MTP_TUNE_NMAXES:-1 2 3 4 5}"
 MAXTOKENS="${MTP_TUNE_MAXTOKENS:-400}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
