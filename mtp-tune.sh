@@ -105,7 +105,7 @@ PYEOF
   secs=$(( $(date +%s) - t0 ))
   sleep 1
   local tg acc
-  tg=$(grep -E "tg = " "$LOG_DIR/mtp-tune-server.log" | tail -1 | grep -oE "tg_3s = *[0-9.]+" | grep -oE "[0-9.]+" || echo "")
+  tg=$(grep -E "tg = " "$LOG_DIR/mtp-tune-server.log" | tail -1 | sed -nE "s/.*tg_3s = ([0-9.]+).*/\1/p")
   [ -z "$tg" ] && tg=$(grep -E "tg = " "$LOG_DIR/mtp-tune-server.log" | tail -1 | sed -nE "s/.*tg = *([0-9.]+).*/\1/p")
   acc=$(grep -oE "mean acc len = *[0-9.]+" "$LOG_DIR/mtp-tune-server.log" | tail -1 | grep -oE "[0-9.]+$" || echo "")
   local wall_tps

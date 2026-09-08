@@ -122,7 +122,7 @@
         // NB: absolute path — serve does NOT expand ~ inside args (bin/model yes)
         "-md", "/Users/michael/localllm/mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
         "--spec-type", "draft-mtp",
-        "--spec-draft-n-max", "2",
+        "--spec-draft-n-max", "1",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
