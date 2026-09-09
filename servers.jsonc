@@ -106,8 +106,11 @@
     // (borrows embed+lm_head from main model; fit at startup prints ONE
     // borrow_shared_tensor error line then works - expected, -c/-ngl below are
     // explicit so the mis-measure cannot bite). Acceptance visible in log:
-    // "draft acceptance = ...". n-max 2 = unsloth's recommendation for this
-    // model; try 3-5 if acceptance runs high. No on-direct here; if it OOMs
+    // "draft acceptance = ...". n-max 3 LIVE per 2026-09-09 n0-n8 arm sweep
+    // (real AVV-2200 sessions, ~25-40k ctx): tg 28.8 -> 41.1 (n3), plateau
+    // n2-n4, decline to n7, n8 net LOSS. n>=6 off-limits; rollback = n1
+    // (+30%, tightest variance; worst-case loss ~draft-gen cost ~n*1.7%).
+    // No on-direct here; if it OOMs
     // at load: head -> shared-Q4_K_M (1.8GB), then -c 131072.
     "flash-next-mtp": {
       "backend": "llamacpp",
@@ -122,7 +125,7 @@
         // NB: absolute path — serve does NOT expand ~ inside args (bin/model yes)
         "-md", "/Users/michael/localllm/mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
         "--spec-type", "draft-mtp",
-        "--spec-draft-n-max", "1",
+        "--spec-draft-n-max", "3",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
