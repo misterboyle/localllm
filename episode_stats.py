@@ -86,12 +86,19 @@ def parse(path: str, lo: float, hi: float, verbose: bool):
           f"(decode {d_ms / (d_ms + p_ms) * 100:.0f}% "
           f"/ prefill {p_ms / (d_ms + p_ms) * 100:.0f}%)")
 
+    # NB: per-request "generated" counts PROPOSED draft slots = n_max per
+    # verify step, so accept-rate is per-proposed-token and mean tokens per
+    # verify step is 1 + n_max * rate. Infer n_max from the cumulative stats
+    # (#calls g side = verify steps; proposed total / steps = n_max).
     with_acc = [r for r in reqs if r["acc"]]
     if with_acc:
         acc_tk = sum(int(r["acc"]["acc"]) for r in with_acc)
         gen_tk = sum(int(r["acc"]["gen"]) for r in with_acc)
-        print(f"accept : {acc_tk}/{gen_tk} = {acc_tk / gen_tk:.3f} of draft "
-              f"tokens (mean acc.len {1 + acc_tk / gen_tk:.2f})")
+        steps_spec = int(spec_last.group("drafts")) if spec_last else 0
+        nmax = max(1, round(gen_tk / steps_spec)) if steps_spec else 1
+        tok_step = 1 + nmax * acc_tk / gen_tk
+        print(f"accept : {acc_tk}/{gen_tk} = {acc_tk / gen_tk:.3f} of proposed "
+              f"(n_max~{nmax}: {tok_step:.2f} tok/verify-step)")
     if spec_last:
         drafts = int(spec_last.group("drafts"))
         accd = int(spec_last.group("accd"))
