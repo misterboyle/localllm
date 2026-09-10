@@ -558,3 +558,21 @@ Next: S5 sim (plant.c + clamp + fv_staircase, 25 pts), S1 datasheet
 expansion to the 50-60K gate, S6 seed materials (Michael executes — B2
 homing notes now in telem_svc.h), S7 prompts/README/score-ingestion;
 then golden verification = 100/100 (expect, post-S5).
+
+### S4 review addendum (same day — Michael challenged the int16 change)
+- Supersedes the "channels signed int16 (aspiration negative)" bullet
+  above: datasheet **Table 5-1 defines the domain** — CH0/CH1 are
+  0–3000 mmHg → 0..32767, unsigned. "Aspiration" in AVA-QC + INVERT
+  withdrawal is pump *action*; the pressure channels never see negative
+  per spec. Channels are now uint16 domain 0..32767, enforced at the
+  parser (minus sign / >32767 → REJECT, no clamp/wrap). Temp stays
+  signed — Table 5-1 thermistors are −40..+125 °C.
+- Writing the range test found a real parser bug: a shared
+  magnitude bound let positive "32768" wrap to -32768 instead of
+  rejecting, and rejected the formatter's own canonical "-3276.8"
+  (round-trip broken at the minimum). Bounds now sign-separated.
+- New guarantee in t_svc_log: EXHAUSTIVE domain sweep (all 32768 channel
+  values + all 65536 t_c10 values) through format→parse→re-format:
+  value-preserving and canonical-stable. Lesson generalizes for S6/S7:
+  any interface-type decision needs the domain written down where the
+  code cites it (telem_svc.h now cites Table 5-1).

@@ -49,8 +49,8 @@ static void sink(void *ctx, const char *line)
 
 /* ---------- 1. formatter byte-pin ---------- */
 
-static void assert_fmt(uint32_t ts, uint32_t seq, int16_t t10, int16_t c0,
-                       int16_t c1, uint8_t flags, const char *want)
+static void assert_fmt(uint32_t ts, uint32_t seq, int16_t t10, uint16_t c0,
+                       uint16_t c1, uint8_t flags, const char *want)
 {
     svc_rec_t r;
     char buf[80];
@@ -73,9 +73,12 @@ static void test_format_exact(void)
     assert_fmt(1u, 1u, -5, 0u, 0u, 0u, "1,1,-0.5,0,0,");
     assert_fmt(1u, 1u, -123, 0u, 0u, 0u, "1,1,-12.3,0,0,");
     assert_fmt(1u, 1u, 32767, 0u, 0u, 0u, "1,1,3276.7,0,0,");
-    /* numeric extremes (channels are signed gauge pressures) */
-    assert_fmt(4294967295u, 4294967295u, 0, -1, 32767, SVC_F_O,
-               "4294967295,4294967295,0.0,-1,32767,O");
+    /* numeric extremes: ts/seq full u32, temp full int16 bounds, channels
+     * at the Table 5-1 domain bounds (0 / 32767) */
+    assert_fmt(4294967295u, 4294967295u, 0, 0u, 32767u, SVC_F_O,
+               "4294967295,4294967295,0.0,0,32767,O");
+    assert_fmt(1u, 1u, INT16_MIN, 0u, 32767u, 0u, "1,1,-3276.8,0,32767,");
+    assert_fmt(1u, 1u, INT16_MAX, 32767u, 0u, 0u, "1,1,3276.7,32767,0,");
 }
 
 /* ---------- 2. parser: exact, normalization, rejects ---------- */
@@ -115,8 +118,19 @@ static void test_parse_exact(void)
     TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,,2,3,4,", &r));
     TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.45,5,6,", &r));  /* 2 decimals */
     TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,.3,5,6,", &r));    /* no int part */
-    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,70000,6,", &r)); /* ch range */
-    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,-33000,6,", &r)); /* ch range - */
+    /* Table 5-1 channel domain: bounds accepted, minus sign and over-range
+     * REJECTED (never clamped, never wrapped) */
+    TEST_ASSERT_EQUAL_INT(SVC_OK, svc_parse_line("1,2,-3276.8,0,32767,O", &r));
+    TEST_ASSERT_EQUAL_INT16(-32768, r.t_c10);     /* temp signed, full int16 */
+    TEST_ASSERT_EQUAL_UINT16(0u, r.ch0_mmhg);
+    TEST_ASSERT_EQUAL_UINT16(32767u, r.ch1_mmhg);
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,-0,6,", &r));     /* minus illegal */
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,-1,6,", &r));
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,-33000,6,", &r));
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,32768,6,", &r)); /* outside domain */
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3.4,70000,6,", &r));
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,3276.8,4,5,", &r));   /* temp +bound */
+    TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,-3276.9,4,5,", &r));  /* temp -bound */
     TEST_ASSERT_EQUAL_INT(SVC_EBAD, svc_parse_line("1,2,4000.0,5,6,", &r));   /* temp range */
 }
 
@@ -215,6 +229,48 @@ static void test_excerpt_spot_checks(void)
     TEST_ASSERT_NOT_NULL(strstr(g_buf, "\n1022,512,37.5,42,43,\n"));
 }
 
+/* ---------- 4. exhaustive type-domain contract ----------
+ * Channels: EVERY value of the Table 5-1 domain (uint16 0..32767).
+ * Temperature: EVERY int16 value (all 65536 — even v -> +v, odd v ->
+ * v-32768), so both signed halves are covered. Each through
+ * format -> parse -> re-format: value must survive and the line must be
+ * canonical-stable (byte-identical re-format). This is the type-change
+ * guarantee — no sign asymmetry at the bounds, no silent wrap. */
+static void test_channel_temp_exhaustive_roundtrip(void)
+{
+    uint32_t bad = 0;
+    long v;
+
+    for (v = 0; v <= 32767L; v++) {
+        svc_rec_t r, back;
+        char l1[80], l2[80];
+        int n;
+
+        r.ts_ms = 1u + (uint32_t)v;
+        r.seq = 1u;
+        r.t_c10 = (int16_t)((v & 1L) ? (v - 32768L) : v);
+        r.ch0_mmhg = (uint16_t)v;
+        r.ch1_mmhg = (uint16_t)(32767L - v);
+        r.flags = (uint8_t)(v & 15L);
+        r.cls = SVC_WIN;
+
+        n = svc_format_win(&r, l1, (int)sizeof l1);
+        if (n < 0) { bad++; continue; }
+        if (svc_parse_line(l1, &back) != SVC_OK) { bad++; continue; }
+        if (back.ts_ms != r.ts_ms || back.ch0_mmhg != r.ch0_mmhg ||
+            back.ch1_mmhg != r.ch1_mmhg || back.t_c10 != r.t_c10 ||
+            back.flags != r.flags) {
+            bad++;
+        }
+        if (svc_format_win(&back, l2, (int)sizeof l2) != n ||
+            strcmp(l1, l2) != 0) {
+            bad++;                    /* non-canonical encoding */
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, bad,
+        "domain values failed format<->parse round-trip (see test header)");
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--regen") == 0) {
@@ -238,5 +294,6 @@ int main(int argc, char **argv)
     RUN_TEST(test_parse_exact);
     RUN_TEST(test_excerpt_matches_golden_file);
     RUN_TEST(test_excerpt_spot_checks);
+    RUN_TEST(test_channel_temp_exhaustive_roundtrip);
     return UNITY_END();
 }

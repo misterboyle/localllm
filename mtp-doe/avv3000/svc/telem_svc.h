@@ -10,8 +10,11 @@
  * WIRE/LOG LINE FORMAT (canonical, byte-identical to uart.log):
  *   ts_ms,seq,t_c,ch0_mmhg,ch1_mmhg,flags
  *   - ts_ms:  int ms; seq: 1-based SDR window sequence (seq = ts/2 + 1)
- *   - ch0/ch1: gauge pressure, mmHg, SIGNED (aspiration swings negative);
- *             parser and formatter round-trip on the signed value
+ *   - ch0/ch1: uint gauge pressure, domain 0..32767 (datasheet Table 5-1:
+ *             0–3000 mmHg -> 0..32767). The parser enforces the contract:
+ *             negative values and > 32767 are REJECTED as spec violations
+ *             (never clamped, never wrapped). (Temperatures, by contrast,
+ *             ARE signed — Table 5-1 thermistors run −40..+125 °C.)
  *   - t_c:    degrees C, one decimal, produced WITHOUT fp printf (t_c10
  *             fixed-point: 36.8 -> "36.8", -5 -> "-0.5")
  *   - flags:  optional letters "O" "A" "H" "L", emitted in that fixed
@@ -85,9 +88,10 @@
 typedef struct {
     uint32_t ts_ms;
     uint32_t seq;        /* SVC_WIN: window seq; SVC_STATUS: last drained seq */
-    int16_t  t_c10;      /* deg C * 10 (unused by STATUS)              */
-    int16_t  ch0_mmhg;   /* signed gauge pressure (unused by STATUS)   */
-    int16_t  ch1_mmhg;
+    int16_t  t_c10;      /* deg C * 10, SIGNED per Table 5-1 thermistors
+                            (unused by STATUS)                          */
+    uint16_t ch0_mmhg;   /* 0..32767, Table 5-1 domain (unused by STATUS) */
+    uint16_t ch1_mmhg;
     uint8_t  flags;      /* SVC_F_* bits; STATUS: 0                    */
     uint8_t  cls;        /* SVC_WIN | SVC_STATUS                       */
 } svc_rec_t;

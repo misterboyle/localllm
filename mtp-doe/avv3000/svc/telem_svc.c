@@ -94,15 +94,6 @@ static int fmt_u32(char *b, uint32_t v)
     return n;
 }
 
-static int fmt_i16(char *b, int16_t v)
-{
-    if (v < 0) {
-        b[0] = '-';
-        return 1 + fmt_u32(b + 1, (uint32_t)(-(int32_t)v));
-    }
-    return fmt_u32(b, (uint32_t)v);
-}
-
 /* fixed-point one-decimal temp, no FP: 36.8 / -0.5 / -12.3 */
 static int fmt_temp(char *b, int16_t t_c10)
 {
@@ -130,9 +121,9 @@ int svc_format_win(const svc_rec_t *rec, char *buf, int cap)
     *p++ = ',';
     p += fmt_temp(p, rec->t_c10);
     *p++ = ',';
-    p += fmt_i16(p, rec->ch0_mmhg);
+    p += fmt_u32(p, rec->ch0_mmhg);
     *p++ = ',';
-    p += fmt_i16(p, rec->ch1_mmhg);
+    p += fmt_u32(p, rec->ch1_mmhg);
     *p++ = ',';
     for (i = 0; i < 4; i++) {
         if (rec->flags & (uint8_t)(1u << i)) {
@@ -270,23 +261,7 @@ static const char *parse_u32(const char *s, uint32_t *v, char term)
     return s + 1;
 }
 
-static const char *parse_i16(const char *s, int16_t *v, char term)
-{
-    int neg = 0;
-    const char *t;
-    uint32_t u;
 
-    if (*s == '-') {
-        neg = 1;
-        s++;
-    }
-    t = parse_u32(s, &u, term);
-    if (t == 0 || u > 32768u) {
-        return 0;
-    }
-    *v = neg ? (int16_t)(-(int32_t)u) : (int16_t)u;
-    return t;
-}
 
 /* t_c: signed, mandatory one decimal digit ("36.8", "-0.5") */
 static const char *parse_temp(const char *s, int16_t *v)
@@ -308,7 +283,9 @@ static const char *parse_temp(const char *s, int16_t *v)
     if (*t != ',') {
         return 0;
     }
-    if (ip * 10u + fp > 32767u) {
+    /* sign-separated bounds, matching int16 and the formatter: the
+     * canonical extreme "-3276.8" (-32768) must round-trip */
+    if (ip * 10u + fp > (uint32_t)(neg ? 32768 : 32767)) {
         return 0;
     }
     *v = (int16_t)(ip * 10u + fp);
@@ -323,7 +300,7 @@ int svc_parse_line(const char *line, svc_rec_t *out)
     const char *s = line;
     uint32_t ts, seq;
     int16_t t_c10;
-    int16_t ch0, ch1;
+    uint32_t ch0, ch1;
     uint8_t flags = 0;
 
     while (*s == ' ' || *s == '\t') {
@@ -342,10 +319,10 @@ int svc_parse_line(const char *line, svc_rec_t *out)
     if (s == 0) return SVC_EBAD;
     s = parse_temp(s, &t_c10);
     if (s == 0) return SVC_EBAD;
-    s = parse_i16(s, &ch0, ',');
-    if (s == 0) return SVC_EBAD;
-    s = parse_i16(s, &ch1, ',');
-    if (s == 0) return SVC_EBAD;
+    s = parse_u32(s, &ch0, ',');
+    if (s == 0 || ch0 > 32767u) return SVC_EBAD;   /* Table 5-1 domain */
+    s = parse_u32(s, &ch1, ',');
+    if (s == 0 || ch1 > 32767u) return SVC_EBAD;
 
     while (*s != '\0' && *s != '\n' && *s != '\r') {
         if (*s == 'O') flags |= SVC_F_O;
@@ -359,8 +336,8 @@ int svc_parse_line(const char *line, svc_rec_t *out)
     out->ts_ms = ts;
     out->seq = seq;
     out->t_c10 = t_c10;
-    out->ch0_mmhg = ch0;
-    out->ch1_mmhg = ch1;
+    out->ch0_mmhg = (uint16_t)ch0;
+    out->ch1_mmhg = (uint16_t)ch1;
     out->flags = flags;
     out->cls = SVC_WIN;
     return SVC_OK;
