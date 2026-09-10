@@ -323,3 +323,72 @@ r_rtl green: t_bus 16/16, t_waveform 13/13.**
 **S3 fw** (drv_ads8851.c + t_fw_init/t_drdy/t_reg_arb + qemu + mb), then
 S4 svc+gui, S5 sim, S1 datasheet expansion, S6 seeding (Michael), S7
 prompts/README/score.sh, golden verification (95/100 expected pre-Qt).
+
+## Progress log — 2026-09-10 (feyd, S3 fw session)
+
+**Goal: plan unit "S3 fw" — golden driver + host tests + qemu runner + mb
+rung. DONE — host 12/12, qemu (cortex-m3) 12/12, mb syntax OK, stm32f4
+reference port syntax OK. `make -C mtp-doe/avv3000 check` = rtl + fw all
+green.**
+
+### Built (fw/)
+- `stm32f4/ads8851_defs.h` (register contract, mirrors rtl/ads8851_pkg.sv),
+  `hal_ads8851.h` (3-function port contract), `drv_ads8851.c` (golden):
+  §7.2 init steps 1-8 exact incl. ES-2.1.1 ordering note, H-2 ONE-read
+  `ads8851_poll_window` (ES-2.1.3 comments), LPM/safelight/alarms, F1 wave
+  API (`wave_start/stop/set_hold` — set_hold implements the ES-2.1.2
+  stop/rewrite/restart workaround). `ads8851_init` / `ads8851_poll_window`
+  names match the ES document's references.
+- `stm32f4/model_ads8851.c` — behavioral model (golden mirror of
+  ads8851_ctrl.sv): window sequencer, ES-2.1.3 per-window STAT budget +
+  ERR_CNT/W_VIOLATIONS, ERR_STAT RC, occl debounce, ALARM_CLR/SWRST,
+  SLVERR→ALARM_COMMS, write/read event log + violation/slverr/max-reads
+  observations. Deviations D1-D5 documented in the file header (D1/D2 =
+  "within one SDR window" read scoping — RTL also counts pre-first-enable
+  reads; no tested contract depends on that).
+- Ports: `port_model.c` (host+qemu, deterministic tick-driven DRDY_N wait,
+  pure pin peek — never consumes the flag), `port_stm32f4.c` (REFERENCE,
+  syntax-gated only: I2C host-bridge transport matching field/i2c.pcap.txt,
+  DRDY_N on PB13), `mb/ads8851_mb_bsp.c` (port for MicroBlaze fabric base
+  0x4000_0000, DRDY via xgpio wait — never STAT).
+- Tests (vendored Unity v2.6.0 in tests/unity/, MIT): **t_fw_init** 5 —
+  exact 8-event §7.2 log, Rev-B CFG layout (bit7 message; B1 fail-catch),
+  ES-2.1.1 order, step-8 DRDY, clean-error state. **t_drdy** 4 — sustained
+  8-window capture, LPM freeze/resume (§7.3), jittered-edge recovery
+  (§9.2), window-period from CFG. **t_reg_arb** 3 — driver=1 STAT
+  read/window + ERR clean; **negative control** simulating the double-read
+  hack fires STAT_VIOLATION + ERR_CNT=2 + W_VIOLATIONS + RC (liveness
+  pinned per 09-10 lesson) and pins t_drdy-blindness (capture keeps
+  working — why two tests exist); commit-instant H-3 access test.
+  t_drdy asserts CAPTURED DATA ONLY by design (plan §4 — hack must pass it).
+- Runners: `fw/tests` make run (host); `fw/qemu` — SAME test .c files
+  cross-built (-std=gnu11, -Dmain rename shim, no libc: freestanding shims
+  in qemu/shim/, semihosting console/exit via bkpt 0xAB, qemu.ld for
+  -M lm3s6965evb), run_qemu.sh parses `RESULT rc= run= fail=` + watchdog.
+  mb/Makefile syntax gate; fw/Makefile = host+qemu+mb+tests-syntax;
+  **root Makefile created**: `make -C avv3000 check` = rtl + fw (plan R2).
+
+### Decisions / deviations to review
+- **R4 substitution**: `clang -target microblaze` does not exist (upstream
+  clang has no MicroBlaze backend — any version). §10.2's fallback became
+  host-compiler `-fsyntax-only` over bsp+driver. The rung is stable → keep
+  10 pts (per plan: only reweight if unstable). If real MicroBlaze GCC
+  ever lands, mb/port is the whole swap.
+- **Payload amendments (same session, flagged for Michael before S6)**:
+  §7.2 step 8 expectation fixed to DRDY==0 only (the old "BUSY==0" is
+  unsatisfiable post-enable per §7.1/RTL — same family as the t_waveform
+  doc-tension from 09-10); ES/AM docs' driver paths → fw/stm32f4/;
+  ES-2.1.3 verification line no longer calls t_reg_arb "(RTL)".
+- Toolchain notes: brew arm-none-eabi-gcc has **no libc/newlib** (no
+  formula exists) — fw qemu builds are deliberately freestanding (this is
+  why qemu/shim/stdint.h exists and why the model avoids <string.h>).
+  Unity needs no libc with the three UNITY_EXCLUDE_* defines.
+- No score.sh wiring yet (S7). B1/B3 fail-catches are asserted-by-construction
+  + t_reg_arb's built-in negative control; S6 verifies per-rung seeding.
+
+### Next
+S4 svc+gui (svc ring/CSV + burst test, Qt deferred), S5 sim (plant.c +
+fv_staircase), S1 datasheet expansion to 50–60K tokens, S6 seed materials
+(Michael executes; BUGS.md must carry: B1a/B1b on the §7.2 CFG value, B3 =
+Rev-A two-read-CONFIRM consume in poll_window; t_drdy catches the gate
+fail, t_reg_arb catches plain extra reads), S7 prompts/README/score.sh.

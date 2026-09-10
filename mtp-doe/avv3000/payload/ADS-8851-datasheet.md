@@ -391,8 +391,8 @@ Figure 7-1 (ASCII — window timing, nominal window W):
 ### 7.2 Initialization sequence (Rev B — *the configuration contract*)
 
 Host software must perform the following steps EXACTLY in order after reset.
-Values are the ones used by the reference driver (`fw/drv_ads8851.c`) and by
-all integration tests.
+Values are the ones used by the reference driver (`fw/stm32f4/drv_ads8851.c`)
+and by all integration tests.
 
 | Step | Action | Value | Notes |
 |---|---|---|---|
@@ -403,7 +403,7 @@ all integration tests.
 | 5 | `TH_RATE = 0x0000_0168` | TH_PERIOD=0x68 (104 windows), TH_FILTER=0x1 | thermal every ~208 ms |
 | 6 | `IRQ_MASK = 0x0000_001F` | all alarm sources unmasked, DRDY IRQ off | safelight + host alarm path |
 | 7 | `CTRL = 0x0000_0001` | re-assert ADC_EN (idempotent) | clears any SWRST residue |
-| 8 | Read `STAT` once | expect DRDY==0, BUSY==0 | confirms clean start (§7.4.2 H-3) |
+| 8 | Read `STAT` once | expect DRDY==0 | confirms clean start (§7.4.2 H-3). BUSY is not checkable here (high whenever a window is open, §7.1) — the BUSY==0 expectation belongs to step 1, pre-enable |
 
 After step 8 the engine free-runs; alarms and DRDY begin after the first
 window close (~8 ms @ 2 ms window × FILT pipeline).
@@ -553,7 +553,8 @@ vs ambient, applies to the field-ticket analysis).
 
 See `appnote-ava-qc-staircase.md` for infusion-profile configuration and the
 AVV-3000 userspace service (telemetry, ring buffer, CSV log) reference
-design; see `fw/drv_ads8851.c` for the reference driver implementing §7.2.
+design; see `fw/stm32f4/drv_ads8851.c` for the reference driver
+implementing §7.2.
 
 ---
 

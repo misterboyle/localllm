@@ -22,8 +22,9 @@ any SWRST, hysteresis is 0 regardless of what the software wrote before the
 reset. No other ALARM_CFG field is affected.
 
 **Workaround:** Re-write ALARM_CFG after any software reset. The reference
-driver performs this as part of its re-init path (see `fw/drv_ads8851.c`,
-`ads8851_init` — ALARM_CFG is written after CTRL in the §7.2 sequence).
+driver performs this as part of its re-init path (see
+`fw/stm32f4/drv_ads8851.c`, `ads8851_init` — ALARM_CFG is written after
+CTRL in the §7.2 sequence).
 
 **Severity:** Low — no safety impact; hysteresis re-establishment is a
 configuration-ordering matter.
@@ -84,10 +85,10 @@ per SDR window. First read observes DRDY=1 → data committed → read the data
 port. If the first read observes DRDY=0 the window was not yet closed; do NOT
 re-read STAT in the same window — wait for the next DRDY_N/BUSY edge and read
 once then. The reference driver implements this (`ads8851_poll_window`,
-`fw/drv_ads8851.c`).
+`fw/stm32f4/drv_ads8851.c`).
 
-**Verification:** the `t_drdy` (host) and `t_reg_arb` (RTL) integration tests
-enforce the once-per-window rule; a second read is detected by
+**Verification:** the `t_drdy` and `t_reg_arb` integration tests (host suite,
+also run under cortex-m3 qemu) enforce the once-per-window rule; a second read is detected by
 ERR_STAT.STAT_VIOLATION.
 
 **Severity:** HIGH for any code written against Rev-A §7.4.2. Requires a
