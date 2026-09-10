@@ -100,6 +100,24 @@ static void test_init_step8_sees_clean_drdy(void)
                                      "DRDY already set at clean start (§7.4.2 H-3)");
 }
 
+/* §7.2 step 1 in force: init must REFUSE to configure a device that is
+ * already acquiring (BUSY never clears pre-enable). Warm restart = the
+ * reachable init failure path; assert it bails BEFORE any configuration
+ * write (log shows the guard reads, zero writes). */
+static void test_init_rejects_warm_restart(void)
+{
+    mdl_wr(ADS8851_CTRL, ADS8851_CTRL_ADC_EN); /* device already running */
+    mdl_obs_reset(); /* clear warm-up traffic; judge THIS init only */
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(ADS8851_ERR_RESET, ads8851_init(),
+                                  "init must fail while BUSY stays set (§7.2 step 1)");
+    for (uint32_t i = 0; i < mdl_log_count(); i++)
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, mdl_log_get(i).wr,
+                                        "init wrote config despite BUSY (§7.2 step 1)");
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(1u, mdl_stat_reads(),
+                                                "step 1 must poll STAT");
+}
+
 /* Init must leave a perfectly clean device: no decode errors, no alarm
  * comms latch, no ES-2.1.3 read violations, ERR_STAT empty. */
 static void test_init_leaves_no_errors(void)
@@ -123,6 +141,7 @@ int main(void)
     RUN_TEST(test_cfg_word_is_revb_layout);
     RUN_TEST(test_alarm_cfg_written_after_ctrl);
     RUN_TEST(test_init_step8_sees_clean_drdy);
+    RUN_TEST(test_init_rejects_warm_restart);
     RUN_TEST(test_init_leaves_no_errors);
     return UNITY_END();
 }

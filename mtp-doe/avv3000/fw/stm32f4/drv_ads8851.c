@@ -57,7 +57,11 @@ int ads8851_init(void)
      * (§7.4.2 H-3). BUSY is intentionally not checked here: it is only
      * low pre-enable (step 1) and at the window-close instant (§7.1).
      * One read is also the whole ES-2.1.3 budget for window 0 — under
-     * no circumstances add a confirming re-read. */
+     * no circumstances add a confirming re-read.
+     * ERR_DIRTY is defensive per §7.2: on golden-semantics silicon step-1
+     * already rejects any start with a pending close (DRDY and
+     * BUSY-cleared never co-observable, §7.1), so the suite exercises
+     * the §7.2 failure path via ERR_RESET (t_fw_init warm-restart). */
     if ((ads8851_hw_rd(ADS8851_STAT) & ADS8851_STAT_DRDY) != 0u)
         return ADS8851_ERR_DIRTY;
 

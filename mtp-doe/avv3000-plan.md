@@ -394,3 +394,17 @@ fv_staircase), S1 datasheet expansion to 50–60K tokens, S6 seed materials
 (Michael executes; BUGS.md must carry: B1a/B1b on the §7.2 CFG value, B3 =
 Rev-A two-read-CONFIRM consume in poll_window; t_drdy catches the gate
 fail, t_reg_arb catches plain extra reads), S7 prompts/README/score.sh.
+
+### Addendum (feyd, same session — post-review coverage audit of §7.2 step 8)
+- Q raised: did dropping BUSY==0 from step 8 downgrade required rigor?
+  No — the observation is unsatisfiable (BUSY is low only at the close
+  tick; DRDY sets one tick LATER, so they never co-report; a BUSY-poll
+  implementation would spend ES-2.1.3 read budgets and fail the exact
+  8-event log test). But the audit found a real hole it exposed: init's
+  only REACHABLE failure branch (ERR_RESET warm-restart) was untested.
+  Added test_init_rejects_warm_restart → suite now 13 (host+qemu green).
+  ERR_DIRTY documented in drv as defensive per §7.2.
+- mb gate upgraded: -Wconversion over bsp+drv+model+port (frontend lint —
+  nearest free analogue of "compile against mb": clang has no microblaze
+  target, Vivado/Vitis' mb-gcc has no macOS host, qemu has no mb machine).
+  Known blind spot: host sizeof(long)≠mb32 (noted in mb/Makefile).
