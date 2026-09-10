@@ -408,3 +408,26 @@ fail, t_reg_arb catches plain extra reads), S7 prompts/README/score.sh.
   nearest free analogue of "compile against mb": clang has no microblaze
   target, Vivado/Vitis' mb-gcc has no macOS host, qemu has no mb machine).
   Known blind spot: host sizeof(long)≠mb32 (noted in mb/Makefile).
+
+## System topology (agreed with Michael post-S3 — supersedes the
+## "MB-as-2200-legacy-cruft" sketch; pattern ported from our real product:
+## camera-head STM32+small-FPGA  ⟷  CCU beefy-FPGA/MB over framed UART)
+- Pump head: STM32F4 safelight + ADS8851. The STM32 OWNS the ASIC register
+  file at runtime via the I2C host-bridge (unchanged — the fw ladder and
+  the B3 i2c.pcap evidence require it).
+- Base controller (Zynq-style SoC): ARM Linux svc/ (telemetry, CSV) + fabric
+  + MicroBlaze. The MB is the fabric CONFIG-PLANE master: bridge windows /
+  gating for the ASIC space, sensor-domain reset/enable, svc telemetry FIFO
+  plumbing; fallback safelight path on head-link loss (why fw/mb keeps a
+  drv port under the syntax gate).
+- HEAD-LINK (UART, framed): STM32 ⟷ MB. Bidirectional heartbeat (miss ⇒
+  safelight app drives amber + head-lost flag into telemetry); STATUS
+  frames (window SEQ, ERR_CNT/W_VIOLATIONS, alarm bitmap, wave state);
+  VERSION (sw/fw); CONTROL cmds (AVA-QC wave-recipe push — the pump-domain
+  CCM analogue, wave-loop/self-test toggle, OCCL_TH / I_MOT gain tweaks).
+- Three-serial naming trap for the S7 README: HEAD-LINK (control) vs
+  TELEMETRY CONSOLE (uart.log artifact) vs QC-panel link — never conflate.
+- New small stage: **S3b head-link skeleton (0.25 d)** — fw/link/ shared
+  frame codec (SOF/len/type/seq/CRC8) + heartbeat SM + cmd table, covered
+  by the mb syntax gate (linted only; qemu has no mb machine, so no
+  mb-execution rung is possible).
