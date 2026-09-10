@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 #include "hal_ads8851.h"
+#include "hlink_port.h"
 
 /* ---- minimal CMSIS-free register view (subset used here) ---- */
 #define PERIPH_BASE   0x40000000u
@@ -172,6 +173,48 @@ int ads8851_hw_wait_drdy(void)
     return 0;
 }
 
+/* ---- HEAD-LINK port (hlink_port.h): USART2, PA2 TX / PA3 RX AF7 -------
+ * The framed control link to the base controller (hlink.h). NOT the
+ * telemetry console — three-serial naming trap, hlink.h header note. */
+#define USART2_BASE   (PERIPH_BASE + 0x4400u)  /* APB1                     */
+#define GPIOA_BASE    0x40020000u
+
+typedef struct {
+    volatile uint32_t sr, dr, brr, cr1, cr2, cr3, gtpr;
+} usart_t;
+
+static volatile usart_t *const usart2 = (volatile usart_t *)USART2_BASE;
+static volatile gpio_t *const gpioa = (volatile gpio_t *)GPIOA_BASE;
+
+#define USART_SR_RXNE  (1u << 5)
+#define USART_SR_TXE   (1u << 7)
+#define USART_CR1_UE   (1u << 13)
+#define USART_CR1_TE   (1u << 3)
+#define USART_CR1_RE   (1u << 2)
+
+void hlink_hw_tx(const uint8_t *bytes, uint32_t n)
+{
+    uint32_t t;
+
+    for (uint32_t i = 0; i < n; i++) {
+        for (t = 0; !(usart2->sr & USART_SR_TXE) && t < 400000u; t++)
+            ;
+        if (t >= 400000u)
+            return; /* TX stuck = board fault, not a link condition;
+                     * the heartbeat period retries from the next frame */
+        usart2->dr = bytes[i];
+    }
+}
+
+int hlink_hw_rx(uint8_t *byte)
+{
+    if (!(usart2->sr & USART_SR_RXNE))
+        return 0;
+    *byte = (uint8_t)usart2->dr; /* reading DR also clears ORE: a dropped
+                                  * byte is a codec problem — SOF resync  */
+    return 1;
+}
+
 /* Bring-up order matters for the bridge; called once from board_init().
  * (Real projects put this in the clock-tree init; kept adjacent so the
  * syntax gate covers it too.) */
@@ -189,4 +232,13 @@ void port_stm32f4_init(void)
     (void)i2c1->sr1;
     (void)i2c1->sr2;
     (void)I2C_CR1_SWI;
+
+    /* HEAD-LINK: USART2 115200 8N1 (placeholder BRR for 16 MHz APB1) */
+    rcc->ahb1enr    |= (1u << 0);            /* GPIOA clock               */
+    rcc->apb1enr    |= (1u << 17);           /* USART2 clock              */
+    gpioa->moder     = (gpioa->moder & ~0xF0u) | 0xA0u;  /* PA2/PA3 = AF */
+    gpioa->afrl      = (gpioa->afrl & ~0xFF00u) | (7u << 8) | (7u << 12);
+    gpioa->pupdrr   |= (1u << 12);           /* PA3 RX pull-up            */
+    usart2->brr      = 139u;
+    usart2->cr1      = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
 }

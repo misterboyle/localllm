@@ -437,3 +437,58 @@ fail, t_reg_arb catches plain extra reads), S7 prompts/README/score.sh.
   shim-as-peer pattern as model_ads8851. MB end = thin counterpart,
   stays under the existing mb syntax gate. No ladder changes: t_hlink
   joins r_fw_host's all-pass contract, 0 net points.
+  **BUILT 2026-09-10** — see "Progress log — 2026-09-10 (S3b)" below.
+
+## Progress log — 2026-09-10 (S3b head-link session)
+
+**Goal: plan stage "S3b head-link". DONE — t_hlink 12/12 host + 12/12 qemu
+cortex-m3; mb + stm32f4 syntax gates cover BOTH port ends; `make -C avv3000
+check` green (rtl+fw), 0 net ladder points as specced.**
+
+Built (all under fw/):
+- stm32f4/hlink.h — the wire contract (self-contained; THE reference for
+  the S7 README): SOF 0xA5 | LEN(0..32) | TYPE | SEQ | payload | CRC8
+  (poly 0x07 init 0x00 = CRC-8/SMBUS, check "123456789"→0xF4) over
+  SOF..payload INCLUSIVE; payloads little-endian; types HB/STATUS/VER_REQ/
+  VER_RSP/CTRL/CTRL_ACK + CTRL opcodes incl. AVA-QC WAVE_RECIPE push;
+  STATUS = 10 B (win_seq u32, err_cnt, w_violations u24, alarm, wave_st —
+  maps STAT/ERR_STAT/ALARM_STATUS/WAVE_STATUS §6 per topology note).
+- stm32f4/hlink.c — golden: byte-driven decoder (SOF-hunt; errors NEVER
+  tear down the link — containment table in the file header), 4-deep
+  delivery queue (overflow counted, liveness still recorded), tx synchronous
+  through the 2-function port in ≤8 B chunks, heartbeat SM: first poll sends
+  an opening HB, any CRC-valid frame refreshes UP, timeout (150 ms, 3
+  missed of 50 ms period, tunable via hlink_cfg_t) → link_up=0; the
+  safelight APP owns the amber action (hlink never touches the driver —
+  keeps MB reuse + syntax gate clean).
+- Fake-peer trio: model_hlink.[ch] = the WIRE (inject raw frames incl.
+  bad_crc, capture tx, no protocol logic), port_hlink_model.c = 5-line
+  port. t_hlink parses head-TX with a HAND-WRITTEN decoder + crc oracle —
+  hlink's encoder is never validated by hlink's own decoder (same
+  independence trick as rtl vs fw models).
+- Coverage: wire-format byte-exact + STATUS LE layout, crc8 reference
+  vectors, arg boundary (37 B max frame; no poll = no HB), clean decode,
+  bad-CRC drop + next-frame recovery, SOF slip (pure junk AND decoy-0xA5 —
+  golden values 0x33/0x34 baked so the one-frame-loss bound is ASSERTED,
+  not asserted-handwavy), seq gap + 255→0 wrap non-gap, flood containment
+  (queue 4, rx_overflow counted, link still UP), HB train periodicity
+  (5×LEN-0 frames in 21×10 ms polls), timeout→LOST→recover (junk does NOT
+  refresh; HB keeps knocking while LOST).
+- Ports under syntax gates BOTH ends: port_stm32f4.c + USART2 half (PA2/PA3
+  AF7, 115200 placeholder; tests-syntax) and mb/hlink_mb_port.c over an
+  axi_uartlite shape (mb -Wconversion gate now also compiles hlink.c).
+
+Decisions/deviations:
+- Freestanding rule hardened (again): struct compounds (`= (T){0}`,
+  35-byte struct assign) compile to memset/memcpy calls that don't exist
+  in the qemu link — hlink.c is explicit-field code, comment documents why.
+  Also NULL: this codebase has no stddef ANYWHERE (shim stdint only) —
+  null-pointer checks are literal `0`, tests included.
+- hlink.c instance state is one static struct; time comes ONLY from
+  hlink_poll(now_ms) args (systick on the head, test-supplied shim-side) —
+  fixture determinism preserved.
+- Ladder: r_fw_host = 4 binaries (t_fw_init 6, t_drdy 4, t_reg_arb 3,
+  t_hlink 12 = 25 host); r_fw_qemu same suite; points unchanged (20/10).
+
+Next: unchanged — S4 svc+gui → S5 sim → S1 datasheet expansion → S6 seed
+(Michael) → S7 prompts/README (+ the three-serial table)/score.sh.

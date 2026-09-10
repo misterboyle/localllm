@@ -19,9 +19,10 @@ INC     := -I. -I../stm32f4 -I../tests -I../tests/unity -isystem shim
 LDFLAGS := -T qemu.ld -nostdlib -lgcc -Wl,--gc-sections -Wl,-Map=build/map
 B       := build
 
-FW_OBJS  := $(B)/drv_ads8851.o $(B)/model_ads8851.o $(B)/port_model.o
+FW_OBJS  := $(B)/drv_ads8851.o $(B)/model_ads8851.o $(B)/port_model.o \
+            $(B)/hlink.o $(B)/model_hlink.o $(B)/port_hlink_model.o
 QEMU_SRC := qemu_start.c qemu_main.c sh.c
-TESTS    := t_fw_init t_drdy t_reg_arb
+TESTS    := t_fw_init t_drdy t_reg_arb t_hlink
 ELFS     := $(addprefix $(B)/,$(addsuffix .elf,$(TESTS)))
 
 .PHONY: all run clean

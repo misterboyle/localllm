@@ -9,6 +9,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -fsyntax-only -I../stm32f4
 
 .PHONY: check
 check:
-	$(CC) $(CFLAGS) ads8851_mb_bsp.c ../stm32f4/drv_ads8851.c \
+	$(CC) $(CFLAGS) ads8851_mb_bsp.c hlink_mb_port.c \
+	               ../stm32f4/drv_ads8851.c ../stm32f4/hlink.c \
 	               ../stm32f4/model_ads8851.c ../stm32f4/port_model.c
-	@echo "r_fw_mb: syntax + conversion OK (bsp, driver, model, port)"
+	@echo "r_fw_mb: syntax + conversion OK (bsp, hlink mb port, driver, hlink, model, port)"

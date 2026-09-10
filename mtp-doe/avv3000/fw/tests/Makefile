@@ -1,6 +1,6 @@
 # fw/tests Makefile — host Unity tests (rung r_fw_host: t_fw_init, t_drdy,
-# t_reg_arb). Driver + model + port build from source on every link; the
-# golden driver and the model must both stay green here (plan §5).
+# t_reg_arb, t_hlink). Driver + model + port build from source on every
+# link; the golden driver and the model must both stay green here (plan §5).
 CC ?= cc
 CSTD := -std=c11
 WARN := -Wall -Wextra -Werror
@@ -8,8 +8,9 @@ INC  := -I. -Iunity -I../stm32f4
 B    := build
 
 FW_SRC := ../stm32f4/drv_ads8851.c ../stm32f4/model_ads8851.c \
-          ../stm32f4/port_model.c
-TESTS  := t_fw_init t_drdy t_reg_arb
+          ../stm32f4/port_model.c \
+          ../stm32f4/hlink.c ../stm32f4/model_hlink.c ../stm32f4/port_hlink_model.c
+TESTS  := t_fw_init t_drdy t_reg_arb t_hlink
 
 .PHONY: all run clean
 all: $(addprefix $(B)/,$(TESTS))
