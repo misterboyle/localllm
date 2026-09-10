@@ -120,9 +120,11 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
       Accept: host+qemu green on golden. (DONE 2026-09-10 feyd — see progress
       log; mb rung = host-compiler syntax gate, R4's clang-target-microblaze
       was impossible.)
-- [ ] **S4 svc+gui (≈0.5 d)** — service with ring + CSV log (golden test +
-      B2-capturing burst test); Qt panel + t_gui_unit offscreen.
-      Accept: green on golden, r_svc/r_gui wired in score.sh.
+- [x] **S4 svc+gui (≈0.5 d)** — service with ring + CSV log (golden test +
+       B2-capturing burst test); Qt panel + t_gui_unit offscreen.
+       Accept: green on golden, r_svc/r_gui wired in score.sh.
+       (DONE 2026-09-10 piter — Qt 6.11.2 now installed, r_gui live;
+       `./score.sh` first run = 75/100 with r_sim pending only.)
 - [ ] **S5 sim (≈0.5 d, optional-vip)** — plant.c single-file deterministic
       plant; occlusion clamp test; fv_staircase trace test vs golden waveform
       (tolerance + seed fixed). Accept on golden.
@@ -492,3 +494,67 @@ Decisions/deviations:
 
 Next: unchanged — S4 svc+gui → S5 sim → S1 datasheet expansion → S6 seed
 (Michael) → S7 prompts/README (+ the three-serial table)/score.sh.
+
+## Progress log — 2026-09-10 (piter, S4 svc+gui session)
+
+**Goal: plan stage "S4 svc+gui". DONE — golden ladder `./score.sh` = 75/100
+(everything except r_sim, which awaits S5). r_svc 9/9 host, r_gui 6/6
+QtTest offscreen; svc_main compile-gated; root `make check` = rtl+fw+svc.**
+
+Toolchain: Qt 6.11.2 installed via `env.sh install-gui` tier (the Qt
+deferral is over — r_gui's 5 pts are live; CMake 4.3.3 was already here).
+
+Built (svc/):
+- `telem_svc.h` — THE svc contract: uart.log-canonical line format
+  (byte-checked against the field sample line), signed gauge channels,
+  ring cap 64 shared WINDOW/STATUS streams, and the **B2 admission
+  policy** golden inverts: STATUS only while free > cap/2; WINDOW never
+  lost to status; full-ring eviction only on writer stall (counted
+  win_overwrite, must stay 0 on the field profile). svc_main.c = thin
+  FIFO->ring->console skin, compile-only.
+- `telem_svc.c` — golden; freestanding discipline kept (no FP printf —
+  fixed-point %.1f by hand; no malloc/clocks; caller drives time).
+- `tests/t_svc_burst.c` 5 — gen_uart.py footprint replay (15000 windows,
+  5 bursts, 1 kHz writer): zero window gaps end-to-end + guard liveness
+  (>25% status rejected — real pressure, seeds can't hide); burst
+  accounting in+rejected == generated; saturated-ring microprobe (exact
+  32-in/8-rejected guard geometry, window wins); eviction geometry;
+  status console line byte-pin "#st,<ts>,<last_win_seq>".
+- `tests/t_svc_log.c` 4 + `t_svc_log_ref.csv` (512 lines, --regen from
+  golden, every hand-derived line present in test_excerpt_spot_checks —
+  derived from run_excerpt() formulas, not copied).
+
+Built (gui/): qc_rate.{h,c} pure-C unit-scale core (AN-8851-07 §5 ×1000
+lives here EXACTLY once; integer, wrap-correct, clamped), qcpanel.cpp =
+presentation-only skin (no arithmetic — B5 = any layer breaking that),
+t_gui_unit.cpp 6 QtTest slots offscreen (exact 2500, truncation-once 333,
+chain, u32 count wrap, clamp, panel text pins "rate: 2500 counts/s").
+CMake+Makefile (QT_QPA_PLATFORM=offscreen); AUTOMOC on for QtTest.
+
+score.sh EXISTS (S0 stub never landed; S4 acceptance demanded the wiring):
+rung table name|pts|cmd|gate; PASS/FAIL/SKIP(qt)/PENDING(r_sim pre-S5);
+prints per-rung JSON + "SCORE n"; exit code = score. S7 extends with
+mtp-harvest ingestion, rung table is the contract unchanged.
+
+Design decisions / deviations:
+- **Writer model has no idle credit**: drain budget zeroes whenever the
+  ring empties — a 1 kHz writer can't super-drain a burst with credits
+  from the quiet 4.9 s (the first draft banked credit and the guard never
+  fired — liveness assert caught its own fixture going no-op; same
+  "harness can be the bug" family). Field math: 500/s windows alone
+  drain fine; burst windows demand 2.5 kHz — overflow is burst-correlated
+  exactly like uart.log.
+- Channels signed int16 (aspiration negative) — parser/formatter
+  round-trip on that; wire is signed.
+- Test thresholds are floors/margins, not golden-arithmetic pins: seeds
+  (B2a/B2b) must fail via the geometry probe + zero-gap asserts, not by
+  us overfitting to one schedule. S6 verifies per-rung fail-catch.
+- Three-serial naming (S7 README): svc console = telemetry console
+  (uart.log artifact); not HEAD-LINK (hlink frames), not QC-panel link.
+  svc consumes FIFO records in wire format; STATUS here is the svc's own
+  burst, hlink STATUS frames are a different animal.
+
+Next: S5 sim (plant.c + clamp + fv_staircase, 25 pts), S1 datasheet
+expansion to the 50-60K gate, S6 seed materials (Michael executes — B2
+homing notes now in telem_svc.h), S7 prompts/README/score-ingestion;
+then golden verification = 100/100 (expect, post-S5).
