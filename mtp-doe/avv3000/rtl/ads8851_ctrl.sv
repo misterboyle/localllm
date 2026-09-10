@@ -135,6 +135,7 @@ module ads8851_ctrl (
     .step_lsb_i (wave_cfg_reg[15:10]),
     .invert_i   (wave_cfg_reg[16]),
     .cfg_wr_i   (wave_cfg_wr),
+    .cfg_data_i (wr_data),      // fresh write data (reg NBA-updates same edge)
     .wave_out_o (wave_out),
     .run_o      (wave_run),
     .cycle_o    (wave_cycle),

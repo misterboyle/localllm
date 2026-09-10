@@ -18,7 +18,7 @@ t_bus: t_bus.cc $(SOURCES)
 	  --Mdir obj_dir_tbus -o t_bus t_bus.cc $(SOURCES)
 
 t_waveform: t_waveform.cc $(SOURCES)
-	$(VERILATOR) --cc --exe --build $(WARN) --top-module ads8851_ctrl \
+	$(VERILATOR) --cc --exe --build --trace $(WARN) --top-module ads8851_ctrl \
 	  --Mdir obj_dir_twave -o t_waveform t_waveform.cc $(SOURCES)
 
 run: all

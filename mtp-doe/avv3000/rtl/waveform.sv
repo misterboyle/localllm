@@ -11,6 +11,11 @@
 // Cadence: one step per hold_ms x 1 ms (ACLK 10 MHz).
 // ES-2026-04 ES-2.1.2: HOLD_MS changes take effect at the NEXT cycle start;
 //   PROFILE / STEP_LSB / INVERT apply immediately.
+//
+// cfg_wr_i pulses on a WAVE_CFG write; cfg_data_i is the write data. The
+// register file updates its mirror with NBA on the SAME edge, so the engine
+// must decode NEW config from cfg_data_i inside the cfg_wr branch — the
+// profile_i/hold_ms_i/... ports lag by one cycle and are stale there.
 `default_nettype none
 module waveform #(
   parameter int ACLK_MHZ = 10
@@ -23,6 +28,7 @@ module waveform #(
   input  wire [5:0]         step_lsb_i,    // WAVE_CFG[15:10]
   input  wire               invert_i,      // WAVE_CFG[16]
   input  wire               cfg_wr_i,      // any WAVE_CFG write
+  input  wire [31:0]        cfg_data_i,    // WAVE_CFG write data (with cfg_wr_i)
   output reg  [15:0]        wave_out_o,    // WAVE_DATA
   output reg                run_o,         // WAVE_STATUS.RUN
   output wire               cycle_o,       // WAVE_STATUS.CYCLE (iter >= 2)
@@ -54,7 +60,7 @@ module waveform #(
   reg [7:0]  up_steps, dn_steps, holdtop_ms;
   reg        sense;         // 0 = ascending, 1 = descending
   reg        iter_reg;      // 1 once a full cycle completed
-  reg [1:0]  profile_prev;  // profile seen last cycle (mid-run change detect)
+  reg [1:0]  profile_applied; // profile the running engine was armed with
 
   assign wave_out_o = wave_q;
   assign cycle_o    = iter_reg;   // 1 during cycle 2..N (§6.15)
@@ -75,6 +81,13 @@ module waveform #(
 
   wire tick = (tick_cnt >= (hold_lat * CLKS_PER_MS) - 1);
 
+  // config decode for the cfg_wr edge (fresh write data, NOT the stale
+  // register ports — see header note)
+  wire [1:0]  cfg_prof = cfg_data_i[1:0];
+  wire [7:0]  cfg_hold = cfg_data_i[9:2];
+  wire [5:0]  cfg_step = cfg_data_i[15:10];
+  wire        cfg_inv  = cfg_data_i[16];
+
   always @(posedge clk_i or negedge rst_n_i) begin
     if (!rst_n_i) begin
       st        <= ST_IDLE;
@@ -85,7 +98,7 @@ module waveform #(
       step_cnt  <= 5'h0;
       sense     <= 1'b0;
       iter_reg  <= 1'b0;
-      profile_prev <= 2'd0;
+      profile_applied <= 2'd0;
       run_o     <= 1'b0;
       done_o    <= 1'b0;
     end else begin
@@ -99,6 +112,7 @@ module waveform #(
             sense    <= invert_i;
             st       <= ST_RAMP_UP;
             run_o    <= 1'b1;
+            profile_applied <= profile_i;
           end
         end
 
@@ -161,6 +175,8 @@ module waveform #(
               iter_reg <= 1'b1;
               sense    <= invert_i;         // re-arm
               step_cnt <= 5'h0;
+              hold_lat <= hold_ms_i;        // deferred HOLD_MS applies here
+                                            // (ES-2.1.2: next cycle start)
               st       <= ST_RAMP_UP;       // loop profiles only reach here
             end
           end else begin
@@ -175,37 +191,42 @@ module waveform #(
 
       endcase
 
-      // ---- config write handling ----
+      // ---- config write handling (decode cfg_data_i, see header) ----
       if (cfg_wr_i) begin
         done_o <= 1'b0;
-        if (profile_i == 2'd0) begin
+        if (cfg_prof == 2'd0) begin
           // stop
-          st     <= ST_IDLE;
-          run_o  <= 1'b0;
-          iter_reg <= 1'b0;
-          step_cnt <= 5'h0;
+          st              <= ST_IDLE;
+          run_o           <= 1'b0;
+          iter_reg        <= 1'b0;
+          step_cnt        <= 5'h0;
+          profile_applied <= 2'd0;
+        end else if ((st == ST_IDLE || st == ST_DONE_ST) && en_i) begin
+          // (re)start with the written params; wave_q is NOT cleared
+          // (profile switches re-arm the ramp from the current output).
+          // en_i-gated per §6.15 (RUN = WF_EN & PROFILE != 0); with the
+          // engine disabled the config lands in the register and the
+          // ST_IDLE start path picks it up when en_i rises.
+          hold_lat <= cfg_hold;
+          step_lat <= cfg_step;
+          tick_cnt <= 28'h0;
+          sense    <= cfg_inv;
+          st       <= ST_RAMP_UP;
+          run_o    <= 1'b1;
+          profile_applied <= cfg_prof;
         end else begin
-          if (st == ST_IDLE || st == ST_DONE_ST) begin
-            // (re)start with latched params
-            hold_lat <= hold_ms_i;
-            step_lat <= step_lsb_i;
-            sense    <= invert_i;
-            st       <= ST_RAMP_UP;
-            run_o    <= 1'b1;
-          end else begin
-            // running: STEP/PROFILE apply now, HOLD_MS at next cycle start (ES-2.1.2)
-            step_lat <= step_lsb_i;    // applied immediately
-            if (profile_i != profile_prev) begin
-              // profile switch mid-run: re-arm the ramp from the current
-              // output (geometry and stepper restart)
-              step_cnt <= 5'h0;
-              sense    <= invert_i;
-            end
+          // running: PROFILE/STEP/INVERT apply immediately; a held HOLD_MS
+          // change applies at the next cycle start (ES-2.1.2)
+          step_lat <= cfg_step;
+          sense    <= cfg_inv;
+          if (cfg_prof != profile_applied) begin
+            // profile switch mid-run: re-arm the ramp from the current
+            // output (geometry and stepper restart)
+            step_cnt <= 5'h0;
           end
+          profile_applied <= cfg_prof;
         end
       end
-      // track the last-seen profile for mid-run change detection
-      profile_prev <= profile_i;
     end
   end
 

@@ -251,7 +251,8 @@ Plan is sound for its goal (settle n2 vs n3 at 150–200K ctx). Amended:
     (golden 2-deep B FIFO — B4 lives here), `rtl/waveform.sv` (AVA-QC engine,
     profiles A/B/C + ES-2.1.2), `rtl/ads8851_ctrl.sv` (top: regs, SDR
     sequencer, ES-2.1.3 STAT semantics, occlusion/alarm, IRQ).
-  - `rtl/tb/t_bus.cc` — **PASSES 15/15** on golden (BRESP back-to-back,
+  - `rtl/tb/t_bus.cc` — **PASSES 16/16** on golden (count corrected
+    2026-09-10; BRESP back-to-back,
     SLVERR/WSTRB, ES-2.1.3 destructiveness, ERR_STAT RC, alarm latch/clear,
     ERR_CNT).
   - `rtl/tb/t_waveform.cc` — **2 failures at last clean run** (see IN FLIGHT).
@@ -260,19 +261,8 @@ Plan is sound for its goal (settle n2 vs n3 at 150–200K ctx). Amended:
     1-cycle rvalid window (cost a debug round).
 
 ### IN FLIGHT (start here next session)
-1. **t_waveform cfg_wr bug — diagnosed, fix written in head, not yet applied:**
-   the engine's cfg_wr branch samples profile_i/step_lsb_i from wave_cfg_reg,
-   which the register block updates with NBA at the same edge → the engine
-   sees STALE config at the cfg edge. Evidence: profile geometry switches to C
-   (up 14) but STEP stays 12 and step_cnt never re-arms (wave 24→168 = 14
-   steps × 12). FIX: pass wr_data into the waveform module as cfg_data_i and
-   use the write data (profile = data[1:0], step = data[15:10], etc.) inside
-   the cfg_wr branch; track applied profile in a reg for change detection.
-   Also verify the cycle_o → comb (iter_reg) change made this session (was
-   the 2nd failure — expected fixed, not yet re-run).
-   VCD tracing for this debug was blocked by verilator --trace not adding
-   verilated_vcd_c to the link — don't burn time on it; the diagnosis above
-   is solid.
+1. ~~t_waveform cfg_wr bug~~ **RESOLVED 2026-09-10 — see below. Rung r_rtl
+   fully green (t_bus 16/16 + t_waveform 13/13).**
 2. Then: **S3 fw** (drv_ads8851.c + host tests t_fw_init/t_drdy/t_reg_arb +
    qemu runner + mb syntax check), **S4 svc+gui**, **S5 sim** (plant.c +
    clamp + fv_staircase), **S1 datasheet expansion** to the 50–60K token gate,
@@ -282,3 +272,54 @@ Plan is sound for its goal (settle n2 vs n3 at 150–200K ctx). Amended:
 3. Toolchain: verilator 5.052, qemu-system-arm, arm-none-eabi-gcc 16.2 all
    installed via brew this session (env.sh mirrors the tiers). Qt6 NOT yet
    installed (Michael: core now, qt deferred).
+
+## Progress log — 2026-09-10 (irulan, t_waveform green session)
+
+**Goal: the plan's IN FLIGHT unit "cfg_wr fix + t_waveform green". DONE —
+r_rtl green: t_bus 16/16, t_waveform 13/13.**
+
+### The cfg_wr fix (as diagnosed 09-09)
+- `waveform.sv`: new port `cfg_data_i[31:0]`, wired to `wr_data` at the top.
+  The cfg_wr branch now decodes NEW config from the write data
+  (`cfg_prof/cfg_hold/cfg_step/cfg_inv`) — the register mirror NBA-updates on
+  the same edge, so `*_i` ports are stale under `cfg_wr_i` (that was the bug).
+- `profile_prev` (broken last-cycle hack) → `profile_applied` reg: set on
+  idle start, on (re)start, on mid-run profile switch, cleared on stop.
+- Mid-run switch: STEP/INVERT apply immediately, step_cnt re-arms when the
+  profile changes; HOLD_MS still deferred — golden now latches
+  `hold_lat <= hold_ms_i` at loop cycle-end (ES-2.1.2 literal reading).
+- Restart path gated on `en_i` per datasheet §6.15 (`RUN = WF_EN & PROFILE!=0`);
+  config written while disabled lands in the register and the idle-start path
+  picks it up when en rises. tick_cnt resets on (re)start.
+
+### Surprise: the 2nd failure was the TESTBENCH, not the RTL
+- Trace forensics (VCD — see tooling note below) showed `cycle_o`, `iter_reg`
+  and the WAVE_STATUS shadow all correct at cycle end (status = 0b111 then
+  0b011). The check itself was `(wave_status() & 2) == 1` — AND-mask can only
+  yield 0 or 2: **unsatisfiable, no RTL can pass it.** Fixed to `== 2`. The
+  09-09 `cycle_o -> comb` change had actually worked.
+- Same family, second fixture bug found by inspection: profile-C block waited
+  `wait_wave(c_top, 130000)` + `CHECK(tC < 120000)` but golden needs ~140K
+  cycles (14 steps x 1ms) — unreachable margins even with correct RTL. Bumped
+  to 150000/146000. **Fixture README (S7) must include: mask with `== bit` not
+  `== 1`, and sanity-check every timing margin against golden cadence math** —
+  t_waveform had one unsatisfiable check and one unreachable margin; agents
+  would have chased ghosts forever.
+- 15/15 t_bus count was stale: it runs 16 checks (ERR_CNT check was added
+  after the note). PASS = zero failures regardless.
+
+### Tooling note (supersedes the 09-09 "don't burn time on VCD" note)
+- `verilator --trace` on the `verilator` command line DOES add
+  `verilated_vcd_c.o` to the link (5.052, macOS — the 09-09 failure was the
+  flag placement, not verilator). `--trace` now in the Makefile t_waveform
+  target. Debug without traces is guesswork; this bug pair (one RTL, one TB)
+  was only separable from the trace.
+- Trace exposes internal regs (iter_reg, st, step_cnt) at level 99 even when
+  the scope header looks port-only — grep the header before giving up.
+- Caveat: trace.vcd at full run length is 33 MB / ~1M cycles; fine for one
+  debug round (already covered by the fixture `.gitignore` `*.vcd`).
+
+### Next (unchanged)
+**S3 fw** (drv_ads8851.c + t_fw_init/t_drdy/t_reg_arb + qemu + mb), then
+S4 svc+gui, S5 sim, S1 datasheet expansion, S6 seeding (Michael), S7
+prompts/README/score.sh, golden verification (95/100 expected pre-Qt).

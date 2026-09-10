@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
   CHECK(td < 120000, "ramp down reached 0 (full cycle)");
 
   // DONE pulse at cycle end (loop) + RUN remains on
-  CHECK((wave_status() & 2) == 1, "CYCLE set on iteration 2 (loop profile)");
+  CHECK((wave_status() & 2) == 2, "CYCLE set on iteration 2 (loop profile)");
   CHECK((wave_status() & 1) == 1, "RUN still on (loop)");
 
   // ---- ES-2.1.2: mid-cycle HOLD_MS change deferred to next cycle ----
@@ -151,10 +151,11 @@ int main(int argc, char** argv) {
   // engine re-arms from the current output; up 14 steps of 4 LSB
   vluint64_t c_top = c_start + 14 * 4;
   fprintf(stderr, "C: start=%llu top=%llu\n", (unsigned long long)c_start, (unsigned long long)c_top);
-  vluint64_t tC = wait_wave((int)c_top, 130000);
+  // 14 steps at 1 ms cadence = ~140K cycles from re-arm
+  vluint64_t tC = wait_wave((int)c_top, 150000);
   fprintf(stderr, "C: waited %llu cycles, last wave=%llu\n", (unsigned long long)tC,
           (unsigned long long)wave_val());
-  CHECK(tC < 120000, "profile C reached top (14 steps)");
+  CHECK(tC < 146000, "profile C reached top (14 steps)");
   CHECK((wave_status() & 1) == 0, "RUN dropped (one-way profile)");
   CHECK((wave_status() & 4) == 4, "DONE sticky set (profile C)");
   // a WAVE_CFG write clears DONE
