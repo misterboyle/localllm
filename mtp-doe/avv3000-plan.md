@@ -427,7 +427,13 @@ fail, t_reg_arb catches plain extra reads), S7 prompts/README/score.sh.
   CCM analogue, wave-loop/self-test toggle, OCCL_TH / I_MOT gain tweaks).
 - Three-serial naming trap for the S7 README: HEAD-LINK (control) vs
   TELEMETRY CONSOLE (uart.log artifact) vs QC-panel link — never conflate.
-- New small stage: **S3b head-link skeleton (0.25 d)** — fw/link/ shared
-  frame codec (SOF/len/type/seq/CRC8) + heartbeat SM + cmd table, covered
-  by the mb syntax gate (linted only; qemu has no mb machine, so no
-  mb-execution rung is possible).
+- Small stage: **S3b head-link (≈2 h, Michael's call when)** — hlink.c on
+  the STM32 side:   frame codec (SOF/len/type/seq/CRC8) + heartbeat SM + tx path behind a
+  2-function hal-style port (tx byte(s) /
+  rx byte with test shim injection), and **t_hlink runs on the existing
+  r_fw_host + qemu rungs with a fake-peer test** (injected frames cover
+  bad CRC, SOF slip/resync, heartbeat timeout → amber state) — no
+  MicroBlaze execution needed to prove the UART side works, same
+  shim-as-peer pattern as model_ads8851. MB end = thin counterpart,
+  stays under the existing mb syntax gate. No ladder changes: t_hlink
+  joins r_fw_host's all-pass contract, 0 net points.
