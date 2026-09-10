@@ -1,8 +1,8 @@
 # AVV-3000 "Hold the Line" — fixture + n2-vs-n3 head-to-head plan
 
-Status: PLAN (staged implementation; written 2026-09-09 at ~100K ctx, session
-thufir/ses_f783e3672 — boot by reading this file + wiki
-`concepts/mtp-speculative-decoding.md` "Manual arm sweep" section).
+Status: PLAN AMENDED + IMPLEMENTATION IN FLIGHT (jessica, 2026-09-09 — review
+amendments in §4/§5/§6/§7/§10; S0/S1/S2 built and mostly verified; see
+"Progress log" at the end of this file for exact state + next steps).
 
 ## 1. Purpose
 
@@ -37,7 +37,9 @@ waveform pattern (inherited AVV-2200 feature) across the whole vertical slice.
 
     mtp-doe/avv3000/
       README.md            # runbook incl. agent rules (see §7)
-      prompt-a.md prompt-b.md   # the one prompts (variant bug sets)
+      prompt-a.md prompt-b.md   # the one prompts (variant bug sets); the
+                                # active prompt is copied into each run's
+                                # workspace as TICKET.md (see §7 preamble)
       score.sh             # ladder runner -> scalar + per-rung JSON
       env.sh               # brew pins: verilator cmake qt qemu arm-none-eabi-gcc
       payload/
@@ -72,8 +74,13 @@ waveform pattern (inherited AVV-2200 feature) across the whole vertical slice.
 | B5 | gui | counts-vs-ms unit scale — panel shows rate ×1000 | t_gui_unit |
 | F1 | all | staircase waveform engine: RTL regs + fw API + sim profile | waveform/fv_* tests |
 
-Variants a/b: rotate which of {B1,B2,B4,B5} is seeded (keep B3 both times) and
-swap waveform profile (appnote profiles a vs b).
+Variants a/b are POINT-BALANCED: each variant seeds the same failing rungs
+{r_rtl, r_fw_host, r_svc, r_gui} — 55 pts unavailable in both (r_rtl 15 + r_fw_host
+20 + r_svc 15 + r_gui 5), max achievable 45 in both, so score is like-for-like
+across variants (the §7 intra-arm gate depends on this). Non-identity comes from
+per-variant bug INSTANCES — B1a/B1b, B2a/B2b, B4a/B4b, B5a/B5b (B3 shared both) —
+plus the waveform profile swap (appnote a vs b). seed/BUGS.md carries the 8
+instances + shared B3 + per-variant map (see S6).
 
 ## 5. Scoring ladder (score.sh, 100 pts)
 
@@ -88,8 +95,9 @@ swap waveform profile (appnote profiles a vs b).
 | r_sim closed-loop (clamp test + fv_staircase trace) | 25 | F1 | sim/; feature payoff rung |
 
 Rules: score.sh exit = sum of pass points; every test fixed-seed hermetic;
-whole ladder must run in < 90 s. Stage-6 acceptance includes "bug-free golden
-tree scores 100" (kept in seed/golden/ as the fixture's own regression).
+whole ladder TEST-EXECUTION must run in < 90 s (builds run once via `make`
+outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
+100" (kept in seed/golden/ as the fixture's own regression).
 
 ## 6. Stages
 
@@ -142,13 +150,23 @@ tree scores 100" (kept in seed/golden/ as the fixture's own regression).
   bias in report, same as every arm-sweep caveat).
 - Prompt preamble (kills the 2026-09-08 journaling leak): "Do not read or write
   ~/wiki. Do not commit. Do not touch anything outside the current working
-  directory. Work the ticket in TICKET.md against payload/."
+  directory. No network access. Work the ticket in TICKET.md against payload/."
+  TICKET.md IS the run's prompt-<variant>.md, copied into the workspace at
+  snapshot time (the prompt file is the ticket; §3 layout).
+- Run hygiene (extends the 2026-09-08 DOE rules): official runs REQUIRE the
+  single-slot layout (flash-next-mtp -np 1 -c 262144 — the live config; opencode
+  context 262144 with auto-compaction, so a 150–200K peak is reachable before
+  compaction) and ZERO other opencode sessions / server traffic during runs.
+  Dry-run (S8) acceptance includes peak-ctx landing in 150–200K; if the dry run
+  lands short, retune difficulty BEFORE freezing (R3).
 - Metrics per run: ladder score, wall (DB), tok/min, token-weighted tg,
   request-acceptance distribution (episode_stats), peak ctx.
-- Decision rule: if |score(a) − score(b)| > 1 rung within an arm →
-  nondeterminism/contamination → investigate, don't average. Else decision =
-  mean wall/tok-min across variants; if within ±3% the published arm-sweep
-  tie stands and we keep n2 on floor grounds; a > 5% wall win flips live config.
+- Decision rule: within an arm, |score(a) − score(b)| ≥ 10 pts →
+  nondeterminism/contamination → investigate, don't average (variants are
+  point-balanced by construction, §4). Else decision = mean wall/tok-min across
+  variants: diff ≤ 3% → the published arm-sweep tie stands, keep n2 on floor
+  grounds; diff ≥ 5% → flip live config; 3–5% → run extension pair (n2c/n3c);
+  still 3–5% → keep n2 (floor grounds).
 
 ## 8. What we already reuse
 
@@ -176,11 +194,91 @@ tree scores 100" (kept in seed/golden/ as the fixture's own regression).
   targeted greps; monitor `new prompt` lines; if a run caps, it caps (same for
   both arms — fair).
 
-## 10. Open questions for S0 (answer before coding)
+## 10. Open questions for S0 — ANSWERED 2026-09-09 (jessica, review)
 
-1. Keep plant sim at S5 vip tier, or drop RTL-adjacent sim to v1.1?
-2. microblaze rung: -fsyntax-only fallback ok, or is the MB layer table stakes
-   for realism? (varies which way it cuts scoring honesty)
-3. 4 official runs (S8) enough for a call under the §7 rule, or 6 (add n3c/n1c
-   to also re-verify the n1-n2 gap at 100–200K ctx, ~+3 h machine)?
+1. **Plant sim: build now, at S5.** r_sim is the 25-pt feature-payoff rung (F1
+   staircase in closed loop); deferring caps the ladder at 75 and kills the
+   score spread the §7 rule needs.
+2. **MicroBlaze: -fsyntax-only fallback accepted** (per R4). mb/ ships as a
+   syntax/header/semantics check via clang -target microblaze; 10 pts
+   provisional — reweight r_sim → 35 if it proves unstable.
+3. **Official runs: 4** (per §7). Extension pair is n2c/n3c, NOT n1c — this
+   fixture's job is the stated n2-vs-n3 call at 150–200K; n1 lives in the arm
+   sweep's jurisdiction.
 ```
+
+## Progress log — 2026-09-09 (jessica, implementation session)
+
+### Review verdict (before building)
+Plan is sound for its goal (settle n2 vs n3 at 150–200K ctx). Amended:
+- **§4 variants are now point-balanced** — both variants seed the same failing
+  rungs {r_rtl, r_fw_host, r_svc, r_gui} via per-variant bug instances
+  (B1a/B1b, B2a/B2b, B4a/B4b, B5a/B5b + shared B3). Any unbalanced 2+2/3+1
+  split would have tripped the §7 intra-arm gate on every run. Max achievable
+  45 in both variants.
+- **§7 decision band fixed** — ≤3% keep n2 / ≥5% flip / 3–5% → extension pair
+  (n2c/n3c); gate threshold now |Δscore| ≥ 10 pts (not "1 rung").
+- **TICKET.md resolved** — the prompt file IS the ticket (copied into the
+  workspace at snapshot time); preamble adds explicit "No network access".
+- **Run hygiene in §7** — official runs require single-slot layout
+  (flash-next-mtp -np 1 -c 262144, live config) + zero other sessions. Live
+  config verified: 1×262K slot, opencode ctx limit 262144 + auto-compaction
+  → 150–200K peak reachable.
+- **§10 answered**: plant sim built now (r_sim = 25-pt feature payoff); MB =
+  -fsyntax-only fallback accepted; 4 official runs (extension n2c/n3c).
+- Michael confirmed (2026-09-09): arms expected to tie on score (MTP lossless);
+  decision metric is mechanical (tg/tpp/wall) — matches §7.
+
+### Built this session (all in mtp-doe/avv3000/)
+- **S0 scaffold**: dirs, .gitignore (seed/, runs/, build/), env.sh
+  (check/install-core/install-gui tiers), root Makefile placeholder.
+- **S1 payload** (contract-complete; datasheet still below the 50–60K token
+  gate — needs an expansion pass):
+  - `payload/ADS-8851-datasheet.md` — Rev B, §1–§11, register map §6 definitive
+    (CTRL/CFG/STAT/ALARM_*/WAVE_*/ERR_STAT/IRQ_MASK/TH_RATE/SAFETY_GATE +
+    data port 0x40..0x5C), §7.2 init sequence (the B1 contract: CFG=0x49,
+    rev-A bit-7 trap), §7.4.2 two-read sequence (superseded by ES).
+  - `payload/ES-2026-04-errata.md` — ES-2.1.3 THE TRAP (STAT read clears DRDY;
+    second read/window = violation + destructive), ES-2.1.1/2 decoys.
+  - `payload/appnote-ava-qc-staircase.md` — profiles A/B/C tables (§3), closed-
+    loop expectation for fv_staircase, QC unit-scale rule, AVV-2200 parity.
+  - `payload/axi-lite-excerpt.md` — AM004 ch.4, §4.3 the BRESP invariant (B4).
+  - `payload/field/` — TICKET.md, uart.log + gen_uart.py (422 lines, gap
+    summary implies B2), i2c.pcap.txt (double STAT reads → B3), 
+    watchdog-histogram.txt, thermal-derating.csv.
+- **S2 rtl** (golden, verilator-verified):
+  - `rtl/ads8851_pkg.sv` (register constants), `rtl/axi_lite_bridge.sv`
+    (golden 2-deep B FIFO — B4 lives here), `rtl/waveform.sv` (AVA-QC engine,
+    profiles A/B/C + ES-2.1.2), `rtl/ads8851_ctrl.sv` (top: regs, SDR
+    sequencer, ES-2.1.3 STAT semantics, occlusion/alarm, IRQ).
+  - `rtl/tb/t_bus.cc` — **PASSES 15/15** on golden (BRESP back-to-back,
+    SLVERR/WSTRB, ES-2.1.3 destructiveness, ERR_STAT RC, alarm latch/clear,
+    ERR_CNT).
+  - `rtl/tb/t_waveform.cc` — **2 failures at last clean run** (see IN FLIGHT).
+  - TB driver lesson (recorded for the fixture's own make/README): AXI master
+    must capture handshake state BEFORE tick(); post-tick checks miss the
+    1-cycle rvalid window (cost a debug round).
+
+### IN FLIGHT (start here next session)
+1. **t_waveform cfg_wr bug — diagnosed, fix written in head, not yet applied:**
+   the engine's cfg_wr branch samples profile_i/step_lsb_i from wave_cfg_reg,
+   which the register block updates with NBA at the same edge → the engine
+   sees STALE config at the cfg edge. Evidence: profile geometry switches to C
+   (up 14) but STEP stays 12 and step_cnt never re-arms (wave 24→168 = 14
+   steps × 12). FIX: pass wr_data into the waveform module as cfg_data_i and
+   use the write data (profile = data[1:0], step = data[15:10], etc.) inside
+   the cfg_wr branch; track applied profile in a reg for change detection.
+   Also verify the cycle_o → comb (iter_reg) change made this session (was
+   the 2nd failure — expected fixed, not yet re-run).
+   VCD tracing for this debug was blocked by verilator --trace not adding
+   verilated_vcd_c to the link — don't burn time on it; the diagnosis above
+   is solid.
+2. Then: **S3 fw** (drv_ads8851.c + host tests t_fw_init/t_drdy/t_reg_arb +
+   qemu runner + mb syntax check), **S4 svc+gui**, **S5 sim** (plant.c +
+   clamp + fv_staircase), **S1 datasheet expansion** to the 50–60K token gate,
+   **S6 seed materials** (BUGS.md + patches + apply_variant.sh — Michael
+   executes), **S7 prompts + README runbook + score.sh wiring**, then golden
+   score verification (expect 95/100 sans gui; r_gui 5 deferred until qt).
+3. Toolchain: verilator 5.052, qemu-system-arm, arm-none-eabi-gcc 16.2 all
+   installed via brew this session (env.sh mirrors the tiers). Qt6 NOT yet
+   installed (Michael: core now, qt deferred).

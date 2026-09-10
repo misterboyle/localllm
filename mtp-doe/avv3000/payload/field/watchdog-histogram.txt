@@ -1,0 +1,20 @@
+# Watchdog reset histogram — safelight controller, affected unit, 4 weeks
+# Bin: pump-head temperature at reset (deg C). Count = controller resets.
+temp_bin_c,resets,note
+18-20,1,
+20-22,0,
+22-24,2,
+24-26,1,
+26-28,0,
+28-30,1,
+30-32,1,
+32-34,2,
+34-36,3,
+36-37,5,
+37-38,11,
+38-39,9,
+39-40,4,
+# Note: reset count in the 37-38 C bin is 11 vs baseline ~1-2 per bin.
+# The controller watchdog fires when the telemetry service stalls; the stall
+# correlates with head temperature AND with the 2 Hz status burst cadence
+# (see uart.log gap summary).

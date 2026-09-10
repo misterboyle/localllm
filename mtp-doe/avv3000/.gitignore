@@ -1,0 +1,13 @@
+# AVV-3000 fixture — local ignores
+# seed/ holds the solution key + variant patches (SECRET, per plan §3)
+seed/
+runs/
+# build artifacts
+build/
+*.o
+*.d
+*.elf
+*.bin
+*.vvp
+obj_dir*/
+*.vcd
