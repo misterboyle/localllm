@@ -101,7 +101,7 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
 
 ## 6. Stages
 
-- [ ] **S0 scaffold (≈0.5 d)** — dirs, env.sh pins, empty score.sh + one
+- [x] **S0 scaffold (≈0.5 d)** — dirs, env.sh pins, empty score.sh + one
       passing smoke rung, README runbook skeleton, .gitignore (seed/, runs/).
       Accept: `./score.sh` runs, prints ladder with smoke rung, git clean.
 - [ ] **S1 payload (≈1 d, THE long pole)** — write ADS-8851 datasheet (target
@@ -111,13 +111,15 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
       uart/i2c captures whose histogram implies B2, thermal table). Cross-ref
       discipline: every code-side number in S2–S5 must trace to a §/table/ES id.
       Accept: word-count gate + cross-ref grep passes.
-- [ ] **S2 rtl (≈0.5 d)** — peripheral + bridge + waveform stub; clean tb
+- [x] **S2 rtl (≈0.5 d)** — peripheral + bridge + waveform stub; clean tb
       (t_bus, t_waveform); waveform engine implemented (golden). Accept:
       verilator passes on golden; after seeding, t_bus fails.
-- [ ] **S3 fw (≈0.5 d)** — drv_ads8851.c full golden impl; host tests; qemu arm
+- [x] **S3 fw (≈0.5 d)** — drv_ads8851.c full golden impl; host tests; qemu arm
       runner; B3 fix path must require ES (double-read hack fails t_reg_arb —
       write t_reg_arb here). mb/ source layout only.
-      Accept: host+qemu green on golden.
+      Accept: host+qemu green on golden. (DONE 2026-09-10 feyd — see progress
+      log; mb rung = host-compiler syntax gate, R4's clang-target-microblaze
+      was impossible.)
 - [ ] **S4 svc+gui (≈0.5 d)** — service with ring + CSV log (golden test +
       B2-capturing burst test); Qt panel + t_gui_unit offscreen.
       Accept: green on golden, r_svc/r_gui wired in score.sh.
