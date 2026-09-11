@@ -11,3 +11,9 @@ build/
 *.vvp
 obj_dir*/
 *.vcd
+
+# payload field captures are FIXTURE DATA: the repo-root .gitignore ships a
+# blanket *.log rule (ops logs) that silently un-tracked uart.log — S1 audit
+# 2026-09-10 found the payload non-self-contained on fresh checkout. Un-ignore
+# the whole field corpus here; runs/ keeps its own logs excluded above.
+!payload/field/*.log

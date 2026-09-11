@@ -104,10 +104,12 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
 - [x] **S0 scaffold (≈0.5 d)** — dirs, env.sh pins, empty score.sh + one
       passing smoke rung, README runbook skeleton, .gitignore (seed/, runs/).
       Accept: `./score.sh` runs, prints ladder with smoke rung, git clean.
-- [ ] **S1 payload (≈1 d, THE long pole)** — DATASHEET DONE 2026-09-10
-      (52.2K tok measured in-band; consistency tool wired as
-      `make payload-check`; appnote/axi/field expansions remain with §3
-      targets already encoded as RED gates — progress log 09-10 mapes).
+- [x] **S1 payload (≈1 d, THE long pole)** — COMPLETE 2026-09-11:
+      datasheet 52.2K tok (09-10 mapes) + appnote 11.0K tok meas /
+      axi extract 16.3K tok meas + field corpus ~42K tok meas
+      (all four §3 gates green; tool recalibrated 09-11, measured-vs-real
+      within 1%; `payload-check` WIRED INTO `make check` — progress log
+      09-10 mapes, 09-11 shaddam).
       Original scope: write ADS-8851 datasheet (target
       50–60K tok: register map tables, §7 init sequence, SDR waveform timing
       diagram in ASCII), errata sheet (ES-2.1.3 written to contradict §7.4.2),
@@ -807,3 +809,91 @@ Notes for later stages:
 Next: appnote → ~12K tok, axi-lite extract → ~18K, field corpus → ~28K
 (gates already encode this; gen_uart.py makes uart.log extension nearly
 free) — then flip `payload-check` onto make check; S6 stays Michael's.
+
+
+## Progress log — 2026-09-11 (shaddam, S1 expansion 2: appnote/axi/field + gates wired)
+
+**Goal: plan stage S1 remaining half — expand appnote/axi/field to §3
+targets, land the corpus prose, wire `payload-check` into `check`.
+DONE: all four §3 gates green; `make check` green (payload gate wired in);
+golden `./score.sh` = 100/100 (7 rungs). Measured against the runtime
+tokenizer (Qwen3.8-27B-UD-Q4_K_XL): appnote 11 040, axi 16 316, field 42 125.**
+
+Built/changed this session:
+- **payload/field/ corpus expansion** (the big one): nine new artifacts —
+  ring-analysis report (B2 trail: 1080 gap events, onsets mod 5000 == 0,
+  alternate-burst arithmetic), triage notes (thermal-decoy kill chain +
+  the 1-in-5000 duty-cycle open question handed to J.2), i2c annotation
+  doc (B3/ES-2.1.3; capture-3 STAT values decode-legal per §6.9), QC
+  panel ×1000 artifact (display family, segregated on reproduces-at-22 °C
+  logic), thermal appendix (6σ tables from the csv), SB-012 repro protocol
+  (loaded-console × warm matrix — arm B/D are the falsification arms),
+  service visit log, calibration certificate (SNR in-distribution, floors
+  per §9.2), boot console (svc config echo: ring 64, burst cadence,
+  win_overwrite counter semantics per telem_svc.h; counter arithmetic
+  matches uart.log: 16 816), fleet gap survey (10 loaded images dirty /
+  2 held 3.0.x clean), snr lot survey, RMA-4482 NFF misdirection. TICKET
+  gains two dated update sections; pcap gains captures 2 (bench,
+  single-read) + 3 (event-class, ERR_CNT walking); histogram gains
+  sister-unit/sub-bin extensions (bias-vs-cause note); thermal csv gains
+  14 interpolated rows, 6σ arithmetic verified row-by-row by script.
+- **gen_uart.py densified then right-sized**: 300 s samples + every-16th
+  gap window + per-hour/first-last summaries (full-model) + SECOND
+  control capture (uart-image-304.log, pre-burst-feature image, zero
+  gaps — the fleet trail's clean leg). Gap model byte-identical to the
+  original seeded statistics (same seed/order).
+- **fixture-bug find/fix**: repo-root `localllm/.gitignore` blanket
+  `*.log` rule had silently kept `payload/field/uart.log` UNTRACKED —
+  payload was not self-contained on fresh checkout. Fixture-local
+  `!payload/field/*.log` added; both captures now tracked. S7 README
+  lesson: fixture payloads need a git-tracking assertion in their own
+  gates (payload-check should add `git ls-files --error-unmatch` on the
+  corpus once next time it's touched).
+- **datasheet doc-bug fix**: Table A-2 profile-A literal 0x000C_0FA1
+  → 0x000C_07D1 (the sheet's own derivation 1|(500<<2)|(12<<16) and the
+  driver packing agree; 0_FA1 encodes 1000 ms). Two occurrences fixed;
+  no code-side consumer of the wrong literal (grepped). Candidate
+  decoy for S6 BUGS.md notes (docs-only artefact).
+- **appnote AN-8851-07 696→6 426 words** (§§7–17: encodings/armed-
+  sessions/§12 misconfiguration gallery/§13 three-layer validation
+  rule incl. Liet's run-the-stated-value rule/§15 worked sessions incl.
+  the profile-B-at-trip SCOPE statement (160 × G6 = 960 — why the
+  closed-loop suite carries A+C only)/§16 quick tables+FAQ; §10 keeps
+  the FLAG-3 pre-increment latch wording; B-dwell 1 200 ms; HOLD 14-bit
+  domain per FLAG 1). Existing §§1–6 byte-preserved (cited anchors).
+- **axi-lite-excerpt 454→10 017 words**: restructured to
+  §4.1–4.19 — §4.3 invariant + worked edge trace kept verbatim, §4.4
+  now IS the WSTRB section (t_bus's AM004 §4.4 cite was previously a
+  mis-citation — now true), §4.5.3 = pending-B retention (the datasheet
+  AM004 §4.5.3 cite target, previously nonexistent), compliance
+  checklist (C1..C11 incl. reset-overlap C11 = §4.1.5's documented
+  response-loss exception), legacy-host-stack section (Rev-A double-
+  read survives wire-compliance — the register counters are the real
+  test). Old §§4.4–4.7 preserved under 4.6/4.7/4.8/4.9.
+- **tool recalibration** (measurements now recorded in the tool header):
+  ratios appnote 1.85→1.73, axi 1.76→1.63, field 1.5→2.9 (mix moved
+  toward prose; capture lines are the token-expensive genre); estimate
+  tracks measured <1% on all four. FIELD measured ~42K vs plan "~28K":
+  deliberate corpus shape; S8 retune lever noted in tool header + here.
+- **misc**: `make check: ... payload-check` wiring; t_svc_log.c stale
+  "uart.log:59" pin comment → semantic ("first sample line"); field
+  prose cross-refs held to the live §-space (tool verifies both ways).
+
+Notes for S6/S7/S8 (Michael's stages — not decisions, inputs):
+- S6 seeding: field corpus now RESTATES the B2 causal chain explicitly
+  (ring report §4's hypothesis = the actual golden policy shape); if
+  the dry run lands easy, thin §4/§5 of the ring report first — the
+  §6/§7.2 contract and pcap/uart data stay untouched (same lever note
+  as appendix J/W from the 09-10 session).
+- S7 README lesson candidates: git-tracking assertion for payload
+  corpora (see fixture-bug above); "conformance runs the payload's
+  stated values" (already appnote §13); loaded-console repro rule
+  (SB-012); the harness pre-tick sampling rule now written into axi
+  §4.11.1 where implementers will actually meet it.
+- S8: total payload now ≈ 122K measured tokens (52.2 + 11.0 + 16.3 +
+  42.1 + 1.4 errata); above the plan's ~110K sketch almost entirely in
+  field prose.
+
+NEXT: S6 seed materials (Michael — the S1 corpus is now the haystack;
+seed/ still MUST NOT be authored by the model-under-test, plan R5),
+S7 protocol/README, S8 dry run.

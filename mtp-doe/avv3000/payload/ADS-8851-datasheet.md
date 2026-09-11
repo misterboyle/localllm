@@ -1257,7 +1257,7 @@ Table A-2 — WAVE_CFG literals at AN-8851-07 §3 profile defaults
 
 | Profile | Steps | HOLD (ms) | STEP_LSB | WAVE_CFG literal | Derivation |
 |---|---|---|---|---|---|
-| A inspection | 10 up + 10 down | 500 | 12 | 0x000C_0FA1 | 1 \| (500<<2) \| (12<<16) |
+| A inspection | 10 up + 10 down | 500 | 12 | 0x000C_07D1 | 1 \| (500<<2) \| (12<<16) |
 | B flush | 8 up | 800 | 20 | 0x0014_0C82 | 2 \| (800<<2) \| (20<<16) |
 | C prime | 14 up | 200 | 4 | 0x0004_0323 | 3 \| (200<<2) \| (4<<16) |
 
@@ -1272,7 +1272,7 @@ Sequence:
 | Step | Register | Value | Notes |
 |---|---|---|---|
 | 0 | — | §7.2 default init complete | AVA-QC needs the closed-loop plant running (A.1 note) |
-| 1 | WAVE_CFG | 0x000C_0FA1 | profile A defaults per Table A-2 |
+| 1 | WAVE_CFG | 0x000C_07D1 | profile A defaults per Table A-2 |
 | 2 | CTRL | 0x0000_0003 | WF_EN=1; ADC_EN must already be 1 (§8.1 arm rule) |
 | 3 | WAVE_STATUS | read | expect RUN=1 |
 | 4 | — | poll DONE (or WAVE_DATA trend) | profile-A cycle = 20 steps × HOLD = 10 000 ms |

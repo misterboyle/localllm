@@ -1,0 +1,25 @@
+# Lot SNR survey — incoming-lot acceptance data pulled for FT-4471
+# (device eng request 2026-05-26: "show me the part could be sick").
+# Method: CM-ADS8851-RB rev 3 sample plan, 25 C, 2 ms window CFG 0x0000_0049;
+# SNR at the two filter settings the datasheet quotes in 9.2. Floors:
+# 71.0 dB (1x, no filter) / 82.0 dB (16x boxcar). Units shown = sampled
+# units, min/max across the sample plus the FT-4471 unit where traceable.
+lot,units_sampled,snr1x_min,snr1x_max,snr16x_min,snr16x_max,failures,note
+L-2402,40,71.3,73.1,82.1,83.6,0,
+L-2417,40,71.1,72.9,82.0,83.4,0,one unit AT floor 82.0 exactly - passed, flagged, reflow-caused, fixed at assembly
+L-2431,40,71.2,73.3,82.2,83.9,0,
+L-2439,40,71.4,73.0,82.3,83.8,0,FT-4471 unit: 85C1-0B2274 in this lot (certificate attached to ticket)
+L-2504,40,71.0,72.8,82.0,83.2,0,tightest lot; floor unit exactly at 71.0 - passed
+ALL,200,71.0,73.3,82.0,83.9,0,no lot drift; distribution stationary across 6 months
+# Readings for the ticket:
+# 1. Unit 4471 measures IN the distribution (cert: 71.6 / 82.4) — it is
+#    not a degraded part; it is a nominal part attached to software that
+#    mishandles it under load.
+# 2. The two floors are datasheet 9.2 figures restated; nothing in this
+#    survey is a spec deviation, in either direction, across 200 units.
+# 3. If CH0 really had a thermally-aggravated defect sufficient to trip a
+#    960 LSB compare, the survey+certificate picture (floors plus, mid-
+#    distribution) would have to be wrong about this part by a wide
+#    margin AND appear only between the 25 C cert and the 37 C head. The
+#    thermal-derating.csv noise column is exactly that between-temperature
+#    picture, and E.2 of the datasheet does the math on it already.

@@ -259,4 +259,151 @@ ts_ms,dir,addr:data
 # ERR_STAT (addr 0x20) read at 120011 returns 0x02 = STAT_VIOLATION sticky.
 # The "confirm" second read is the reason windows intermittently lose their
 # ready edge under load (1-in-5000 alarm symptom, temperature-correlated via
-# window jitter).
+# window jitter).# ============================================================
+# CAPTURE 2 — lab bench unit (the one from the 96 h run), same
+# host-bridge sniff rig, 2 min excerpt (ts restarts at 0).
+# Difference on the STAT path is immediately visible: ONE read
+# per SDR window on this controller build.
+# ============================================================
+ts_ms,dir,addr:data
+0,W,0x0C:0x01
+1,W,0x04:0x49
+2,W,0x0C:0x00
+3,W,0x24:0x1F
+10,R,0x08:0x00
+2010,R,0x08:0x01
+2011,R,0x40:0x2A
+2012,R,0x48:0x3C
+4010,R,0x08:0x01
+4011,R,0x40:0x2A
+4012,R,0x48:0x3D
+6010,R,0x08:0x01
+6011,R,0x40:0x2B
+6012,R,0x48:0x3D
+8010,R,0x08:0x01
+8011,R,0x40:0x2B
+8012,R,0x48:0x3D
+10010,R,0x08:0x01
+10011,R,0x40:0x2C
+10012,R,0x48:0x3E
+12010,R,0x08:0x01
+12011,R,0x40:0x2C
+12012,R,0x48:0x3E
+14010,R,0x08:0x01
+14011,R,0x40:0x2C
+14012,R,0x48:0x3E
+16010,R,0x08:0x01
+16011,R,0x40:0x2D
+16012,R,0x48:0x3F
+18010,R,0x08:0x01
+18011,R,0x40:0x2D
+18012,R,0x48:0x3F
+20010,R,0x08:0x01
+20011,R,0x40:0x2E
+20012,R,0x48:0x3F
+22010,R,0x08:0x01
+22011,R,0x40:0x2E
+22012,R,0x48:0x40
+24010,R,0x08:0x01
+24011,R,0x40:0x2E
+24012,R,0x48:0x40
+26010,R,0x08:0x02
+26011,R,0x40:0x2F
+26012,R,0x48:0x40
+28010,R,0x08:0x01
+28011,R,0x40:0x2F
+28012,R,0x48:0x41
+30010,R,0x08:0x01
+30011,R,0x40:0x30
+30012,R,0x48:0x41
+32010,R,0x08:0x01
+32011,R,0x40:0x30
+32012,R,0x48:0x41
+34010,R,0x08:0x01
+34011,R,0x40:0x30
+34012,R,0x48:0x42
+36010,R,0x08:0x01
+36011,R,0x40:0x31
+36012,R,0x48:0x42
+38010,R,0x08:0x01
+38011,R,0x40:0x31
+38012,R,0x48:0x42
+40010,R,0x08:0x01
+40011,R,0x40:0x31
+40012,R,0x48:0x43
+42010,R,0x08:0x01
+42011,R,0x40:0x32
+42012,R,0x48:0x43
+44010,R,0x08:0x02
+44011,R,0x40:0x32
+44012,R,0x48:0x43
+# ---- analysis notes (capture 2) ----
+# Same host bridge, same cable, same ASIC revision; the bench controller
+# reads STAT exactly ONCE per window (addr 0x08 returning 0x01 IS the
+# ready edge; 0x02 at 26010/44010 = BUSY, DRDY not yet posted — that
+# window is skipped, no second STAT poll, data port not touched).
+# ERR_STAT (0x20) stays untouched at bench: nothing sets STAT_VIOLATION
+# when there is no second read. That silence is the tell — the affected
+# unit's ERR_STAT errors are NOT self-generated noise, they are the
+# direct arithmetic of its own driver loop.
+#
+# ============================================================
+# CAPTURE 3 — affected unit 4471, evening of same day (+6 h),
+# excerpt around two alarm events; shows how the accumulated
+# violation picture looks right before a red-safelight event.
+# ============================================================
+ts_ms,dir,addr:data
+20010,R,0x08:0x31
+20011,R,0x08:0x30
+20012,R,0x40:0x3F
+20013,R,0x48:0x50
+180010,R,0x08:0x35
+180011,R,0x08:0x34
+180012,R,0x20:0x02
+180013,R,0x10:0x21
+180020,W,0x00:0x21
+180030,R,0x10:0x00
+180040,R,0x08:0x01
+180041,R,0x08:0x00
+180042,R,0x40:0x40
+180043,R,0x48:0x51
+240010,R,0x08:0x15
+240011,R,0x08:0x14
+240012,R,0x20:0x02
+240013,R,0x10:0x21
+240020,W,0x00:0x21
+240030,R,0x10:0x00
+240040,R,0x08:0x01
+240041,R,0x08:0x00
+240042,R,0x40:0x3F
+240043,R,0x48:0x51
+# ---- analysis notes (capture 3) ----
+# STAT decode per §6.9: bit0 DRDY, bit1 BUSY, bit2 OCCL_DET, [7:4]
+# ERR_CNT (mirror of ERR_STAT, RC). 180010: first read 0x35 = DRDY +
+# OCCL_DET + ERR_CNT=3 — three STAT violations already banked by the
+# controller's own double reads since the last ERR_STAT clear. Second
+# read 0x34: DRDY consumed (0x35 -> 0x34), exactly the ES-2.1.3
+# destructive-read signature, this time ON the event window.
+# ERR_STAT (0x20) = 0x02 = STAT_VIOLATION sticky. ALARM_STATUS (0x10) =
+# 0x21 = ALARM_OCCL | ALARM_LATCHED: the red-safelight event. Operator
+# reset writes CTRL.ALARM_CLR (W,0x00:0x21 at 180020 = ADC_EN | bit5
+# W1C); ALARM_STATUS reads 0x00 afterwards (180030).
+# Note what the trace does NOT show: the data-port pairs (0x40/0x48)
+# before, during and after BOTH events sit at the same gentle levels as
+# the quiet windows — no jump, no step anywhere near a threshold-crossing
+# pattern in the readings the controller recorded. Yet the latch is
+# silicon logic over a real >= OCCL_TH window sequence (§8.2 debounce:
+# several consecutive windows, not one sample). Conclusion of the
+# evidence walk: the trip happened in windows whose host-side record was
+# never delivered or was consumed destructively — the controller ate its
+# own evidence with the second read, and the console path (capture 1,
+# and the uart.log gaps) lost the rest. The alarm itself behaves per the
+# datasheet; the INSTRUMENTATION around it does not.
+# Field-service conclusion (2026-06-01, REVISED): two distinct faults
+# hide in these traces. (a) the driver on THIS platform reads STAT twice
+# per window — a Rev-A pattern, alive because the bench never runs the
+# site host stack; §7.4.2 documents the supersession, ES-2.1.3 documents
+# the lethality. (b) why only THIS deployment shows it at 1-in-5000: the
+# violation counts ride on windows that ALSO feed the telemetry console —
+# the interaction to model is downstream in the SERVICE's shared ring,
+# not on this I2C bus.

@@ -1,0 +1,53 @@
+=====================================================================
+ CALIBRATION CERTIFICATE — batch traceability attachment (FT-4471)
+=====================================================================
+ Unit under test      : AVV3-4471 (ADS-8851 serial 85C1-0B2274, lot L-2439)
+ Assembled platform   : AVV-3000 arthroscopic pump, asset tag 2211-C17
+ Calibration station  : Apex Med factory bench CB-4, ATE build 2025.08
+ Procedure            : CM-ADS8851-RB rev 3 (Rev B silicon flow, F.2 self-cal
+                        ran first in every power cycle per datasheet 9.2.1)
+ Conditions           : 25.0 C +/- 0.5 C, AVDD 3.30 V, DVDD 1.80 V,
+                        ACLK 10.000 MHz (locked to station GPSDO)
+ Operators            : J. Achebe / A. Novotna (dual sign-off)
+ Date                 : 2025-11-30 (same sweep that captured the
+                        uart-image-304.log telemetry control run, same slot)
+
+ MEASURED — DC (after in-cycle self-cal, per F.2)
+---------------------------------------------------------------------
+ offset error, CH0      : +2 LSB      (spec +/-8 LSB)
+ offset error, CH1      : +1 LSB
+ gain error, CH0        : +0.02 %     (post-trim; Table B-1 25 C class)
+ gain error, CH1        : +0.03 %
+ INL worst, CH0         : +3 LSB      (spec +/-4 LSB)
+
+ MEASURED — noise / AC (2 ms window, reference CFG 0x0000_0049)
+---------------------------------------------------------------------
+ CH0 shorted-input p-p noise, boxcar 4x : 4 LSB   <- the 25 C row of
+ CH0 noise sigma, same config            : 4 LSB      thermal-derating.csv
+ SNR, 1x no filter, 1 kHz -0.5 dBFS      : 71.6 dB (floor 71.0 dB)
+ SNR, 16x boxcar, 1 kHz -0.5 dBFS        : 82.4 dB (floor 82.0 dB)
+ THD                                   : -88.3 dB (spec -88 dB)
+ Crosstalk, adjacent CH0->CH1          : -104 dB  (within Table B-6)
+
+ PASS. Unit shipped. Both SNR margins are floor-plus, both DC errors
+ inside half the window. Nothing on this certificate is within an
+ order of magnitude of explaining anything temperature- or
+ alarm-flavoured; if re-certified, expect the SAME picture because the
+ part is not the variable in its own story.
+
+ Notes recorded on station sheet:
+ - Self-cal phases clean, no fuse re-solve, no RAM-overlay retries;
+   baked-fuse path (F.2) used at production.
+ - CH0 front end (dual gauge, Table 5-1 domain 0..3000 mmHg -> counts)
+   verified at 0 / full / mid with the station's dead-weight tester: linearity
+   residuals <= 2 LSB.
+ - Post-cal 3 h soak on the slot console: this is uart-image-304.log;
+   seq contiguous; svc counters zero (image 3.0.4 had burst OFF —
+   burst feature arrived with 3.1.0; see fleet-gap-survey.csv column
+   note 4 there).
+ - Slot re-imaged 3.1.2 (2026-01-14), 3.2.1 (2026-03-02) per site
+   schedule; hardware and station not touched since this certificate.
+   Any "the unit came back from calibration like that" theory needs
+   the 3.0.4 capture to explain it too, and the capture says zero.
+
+ [stamps, barcodes, reflow profile attachment — omitted in text copy]

@@ -1,0 +1,49 @@
+RMA-4482 — DISPOSITION: NO FAULT FOUND (unit returned to service)
+=================================================================
+Raised 2026-05-08 by site NV-2 ("same red-light problem, second unit")
+Unit: AVV3-4472 (adjacent serial to the FT-4471 unit, same purchase lot,
+SAME STATION HARNESS as 4471 — see the line that matters at the end)
+
+Reported symptom history:
+- two red-safelight events over seven weeks, no patient events
+- console capture from the station was NOT attached to the RMA (harness
+  was on loan to FT-4471 — the capture that became uart.log was taken
+  with the same rig three slots over)
+- "transport story": RMA shipment bag had a condensation indicator go
+  pink in transit; site asked whether moisture in the head assembly
+  could explain intermittent occlusion trips
+
+Bench findings (standard suite + FT-4471 family probes, 2026-05-12):
+- occlusion compare: threshold sweep at 6 points, debounce geometry
+  spot-checked at the reset DEB code — silicon per datasheet, margins
+  per fleet table; 6 sigma picture nominal at every temperature held
+  (37 C noise row 15 LSB — in family)
+- read path on the bench host stack: single STAT read per window,
+  ERR_STAT clean after init walk — but note the bench host stack is
+  NOT the site host stack (see the FT-4471 pcap annotations; this is
+  the only reason this RMA is filed here at all)
+- thermal: chamber pass 10->45 C, no latch, thermal monitor behavior
+  nominal (B-12 class numbers)
+- moisture investigation opened and CLOSED within the day: the
+  condensation indicator on that shipment lot reads pink for ANY
+  humidity over 70 % for over 2 h — logistics confirmed a dock dwell
+  in May rain affecting the ENTIRE shipment of 40 units, 38 of them
+  with pink stickers, all of them dry, all passed. The sticker is a
+  logistics problem with a desiccant spec, not an electronics problem.
+  (Filed separately as LG-2026-31. Two engineers lost a combined two
+  days to "water in the pump" before logistics was called.)
+
+Disposition: NFF. Unit back in service 2026-05-15.
+
+Why this RMA belongs to FT-4471 WITHOUT being a fault: the station
+harness. The sniff console used for the fleet campaign is one of two
+units; 4482's events were never captured because the rig was with
+4471. When the rig rotates back and a loaded-console capture of 4482
+exists, its seq-hole summary will almost certainly match the family —
+which will say NOTHING about 4482's occlusion events either way:
+per the ring analysis the console record is missing pieces on a
+schedule regardless of what the silicon did. NFF on 4482 is an honest
+verdict about the hardware and a complete dead end about the symptom —
+do not cite this document as "that unit was fine," cite it as "that
+unit's evidence trail was never takeable until the ring is trustworthy
+and the read path stops eating the record."

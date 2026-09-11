@@ -1,0 +1,37 @@
+# Fleet sequence-gap survey — 12 units, sites NV-2 and RVC-1, 2026-05-28.
+# Method per SB-012 arm A: loaded console, head as-patient, 3 h capture.
+# gap_events/gaps_per_hour/hole_size_min/hole_size_max refer to WINDOW-seq
+# holes at 2 Hz burst onsets (same signature as uart.log). All counters are
+# svc-side after summary, not console eyeball.
+unit,site,image,gap_events,hole_size_min,hole_size_max,gaps_outside_burst,resets_3h,note
+4471,NV-2,3.2.1,1080,12,19,0,7,the ticket unit
+F2,RVC-1,3.2.1,1080,12,19,0,3,second clinical event unit
+F7,NV-2,3.2.1,1080,12,19,0,2,
+C11,NV-2,3.2.1,1080,12,19,0,1,'idle-ish' duty day; gaps depend on load not on session
+C12,NV-2,3.2.1,1080,12,19,0,0,zero resets does NOT mean zero drops — counters disagree with the symptom column on purpose
+T3,RVC-1,3.2.0,1080,12,19,0,4,
+T4,RVC-1,3.2.0,1080,12,19,0,1,
+T9,RVC-1,3.1.2,1080,12,19,0,0,fleet floor of the image family with the burst feature
+B6,NV-2,3.1.0,1080,12,19,0,1,oldest loaded image in service; earliest repro = earliest burst cadence
+B8,NV-2,3.1.0,1080,12,19,0,2,
+H1,NV-2,3.0.4,0,-,-,0,0,HELD at 3.0.x (burst feature absent) — clean sweep
+H2,RVC-1,3.0.4,0,-,-,0,0,HELD at 3.0.x — clean sweep; same station harness families as loaded units
+# Readings:
+# 1. 10/10 units on burst-family images carry the identical signature:
+#    360 gap events per hour (alternate bursts), holes 12..19 lines,
+#    NEVER a hole outside a burst instant. Hardware is not a variable in
+#    this table; the image family is the only column that separates the
+#    two clean rows from the ten dirty ones.
+# 2. gap_events identical (1080/3 h = 360/h) across all loaded units:
+#    loss is deterministic cadence, not marginal hardware. A wear-out or
+#    a marginal link does not repeat to the record across stations.
+# 3. resets_3h is load- and temperature-biased (compare C11 vs 4471 on
+#    similar days); the drops are NOT — see watchdog-histogram.txt
+#    extension notes for the drain-rate story. Symptom presence in
+#    clinical reports tracks the resets column, NOT the drops column —
+#    which is exactly how a fleet-wide data-integrity fault rides along
+#    invisible under a rarer symptom for months.
+# 4. Any future survey row for a patched build must show gap_events = 0
+#    by counters AND zero window-class evictions by counters; a row that
+#    merely reports "fewer gaps", or reports holes outside bursts, gates
+#    out of acceptance (see ring report, asks).

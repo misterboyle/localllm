@@ -3,10 +3,11 @@
 # the ladder.
 .PHONY: check payload-check rtl fw svc sim gui clean
 
-check: rtl fw svc sim
+check: rtl fw svc sim payload-check
 
-# S1 payload gate (S1 acceptance tooling). Stays OUT of `check` until all
-# four §3 size gates go green — follow-up sessions author appnote/axi/field.
+# S1 payload gate (S1 acceptance tooling): §3 size gates + cross-ref +
+# register-map pin. WIRED INTO `check` 2026-09-11 — all four §3 gates
+# green after the S1 expansion sessions (datasheet/appnote/axi/field).
 payload-check:
 	@tests/test-payload-consistency.sh
 

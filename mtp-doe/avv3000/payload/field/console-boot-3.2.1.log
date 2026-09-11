@@ -1,0 +1,41 @@
+# ------------------------------------------------------------------
+# Station console boot capture — unit AVV3-4471, production image 3.2.1
+# (serial TTY 115200 8N1, from power-on to RUN state; timestamps ms)
+# ------------------------------------------------------------------
+[    0.000] boot: SPL 2024.11 (build 2026-02-18T09:12Z) booting from MMC1
+[    0.001] boot: asset 2211-C17, board rev C2, pump head ASSY 44-118 rev 5
+[    0.312] linux: 5.15.xx-yocto-distro (apex-image 3.2.1) console=ttyS1,115200
+[    0.988] ads8851: probe host bridge slot 0: id 0x8851 rev B -- OK
+[    0.990] ads8851: errata level ES-2026-04 (knows ES-2.1.1 ES-2.1.2 ES-2.1.3)
+[    0.991] ads8851: STAT read policy: DRIVER-OWN (this stack reads STAT -- check which pattern)
+[    1.004] init: cfg-load /etc/apex/telem.conf
+[    1.005] telem: service 3.2.1 (ring 64 records, shared window+status)
+[    1.005] telem: window stream: 1 line per SDR window (2 ms) 500 lines/s
+[    1.006] telem: status burst: every 5000 ms, 100 ms @ 2 kHz (200 records)
+[    1.006] telem: admission: policy fifo-evict cfg=0x00 (debug echo -- no class guard active)
+[    1.010] telem: counters: high_water / rejected / evicted / win_overwrite = armed
+[    1.204] qcpanel: panel link up (rate display: counts/s -- ms-domain source, x1000 scale applied once at presentation)
+[    1.318] asic: init walk per datasheet 7.2 -- CTRL 0x00000001; CFG 0x00000049; ALARM_CFG 0x00001E0F; TH_RATE 0x00000168; IRQ_MASK 0x0000001F
+[    1.320] asic: STAT readback #1: DRDY=0 (step 8 of 7.2 clean -- ONE read)
+[    1.321] asic: sequence start: window 2 ms, 4x oversample, boxcar+FIR
+[    1.330] app: safelight policy APP-2024-3: amber on soft warn, red per hardware gate
+[    2.001] app: READY state entered; QC panel shows primed
+[    5.000] telem: status burst #1 emitted (200 records)
+[    5.004] telem: (window-seq gap: 18 records lost at burst -- win_overwrite=18)
+[    5.004] telem: note: per-record loss messages suppressed after this line (counter still armed)
+[ 10.002] telem: status burst #2 emitted -- clean burst, ring had space
+[ 15.002] telem: status burst #3 emitted (200 records)
+[ 15.006] telem: (window-seq gap: 12 records lost at burst -- win_overwrite=30)
+[ 25.002] telem: status burst #5 emitted (200 records)
+[ 25.006] telem: (window-seq gap: 12 records lost at burst -- win_overwrite=42)
+# ... steady state: alternate bursts eat 12..19 window records each,
+#     win_overwrite climbs ~1.56/s averaged, high_water pinned at 64,
+#     rejected path never taken (nothing guards admission)...
+[ 60020.441] wdt: watchdog config pet-timeout 250 ms (app core petting task prio 12)
+# ... 37 C clinical day: petting task starvation coincidences begin;
+#     per reset record see watchdog-histogram.txt extension alignment ---
+[10800.001] telem: session summary: window_lines=5383184 dropped_win=16816 lostpct=0.311%
+[10800.002] telem: counters final: high_water 64 rejected 0 evicted 269264 win_overwrite 16816
+[10800.003] telem: NOTE: evicted counts STATUS-class records (acceptable, cheap);
+[10800.004] telem:       win_overwrite counts WINDOW-class records overwritten
+[10800.005] telem:       (POLICY VIOLATION CLASS -- must be ZERO by design, not by luck)

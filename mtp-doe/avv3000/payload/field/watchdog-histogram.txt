@@ -18,3 +18,51 @@ temp_bin_c,resets,note
 # The controller watchdog fires when the telemetry service stalls; the stall
 # correlates with head temperature AND with the 2 Hz status burst cadence
 # (see uart.log gap summary).
+# ============================================================
+# Extension — same unit, +3 weeks at site (through 2026-06-08),
+# and the two sister units at the same site for comparison.
+# ============================================================
+#
+# Unit 4471 (the affected unit), 37-degree sub-bins at 0.5 C:
+temp_bin_c,resets,note
+36.5-37.0,2,
+37.0-37.5,7,
+37.5-38.0,5,
+38.0-38.5,6,
+38.5-39.0,3,
+# (first-4-weeks counts for these ranges were 5/11/9 folded to 1 C bins;
+#  the mass sits 37.0-38.5 C, i.e. normal pump-head duty temperature)
+#
+# Sister unit F2 (site RVC-1, image 3.2.1):
+temp_bin_c,resets,note
+22-24,0,
+34-36,1,
+36-38,4,
+38-40,2,
+#
+# Sister unit F7 (site NV-2, same image 3.2.1):
+temp_bin_c,resets,note
+22-24,0,
+34-36,1,
+36-38,6,
+38-40,1,
+#
+# Cross-correlation (all three captures of the affected unit included):
+# 1. Every logged reset in the 4471 stream (uart.log side) lands within
+#    100 ms AFTER a 2 Hz status-burst onset. Temperature does NOT enter
+#    the causal chain in the logs — but at higher head temperature the
+#    console writer path slows (thermal throttle of the app core reduces
+#    drain rate), which makes bursts and stalls coincide more often. The
+#    histogram is therefore temperature-BIASED, not temperature-CAUSED;
+#    check the burst-instant alignment before buying any ASIC theory.
+# 2. Sister units F2/F7 show the same bias with the same image. Fleet
+#    effect, not a singleton defect: see fleet-gap-survey.csv.
+# 3. The bench 96 h run (TICKET.md: 22 C, continuous, deliberate
+#    threshold crossings) logged ZERO resets — while the bench was NOT
+#    running the telemetry console attachment at site burst density.
+#    Correlation with the bench setup, not lab luck.
+#
+# Instrumentation request for next site visit (field service, 2026-06-08):
+# log the svc self-report counters (ring high-water, rejected, evicted,
+# win_overwrite) in the same row as the watchdog reset record, so the
+# stall hypothesis can be pinned per reset instead of correlated per bin.

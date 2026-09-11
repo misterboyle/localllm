@@ -63,7 +63,7 @@ static void assert_fmt(uint32_t ts, uint32_t seq, int16_t t10, uint16_t c0,
 
 static void test_format_exact(void)
 {
-    /* the uart.log sample line, verbatim (payload/field/uart.log:59) */
+    /* the uart.log sample line, verbatim (payload/field/uart.log, first sample line) */
     assert_fmt(120u, 61u, 368, 41u, 42u, 0u, "120,61,36.8,41,42,");
     /* flag order is always O,A,H,L regardless of value bit order */
     assert_fmt(1u, 1u, 200, 0u, 0u, SVC_F_L | SVC_F_H, "1,1,20.0,0,0,HL");

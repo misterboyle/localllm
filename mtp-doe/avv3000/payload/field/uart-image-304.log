@@ -1,0 +1,50 @@
+# AVV-3000 pump telemetry — uart-image-304.log (3 h CONTROL capture, EXCERPT)
+# Same unit slot, site test bench, image 3.0.4 (2025-11-30 pre-deploy
+# validation sweep — BEFORE the 2 Hz STATUS burst feature (3.1.0).
+# Format: ts_ms,seq,t_c,ch0_mmhg,ch1_mmhg,flags  (one line per SDR window).
+# This file keeps one sample line per 300 s plus the gap summary.
+ts_ms,seq,t_c,ch0_mmhg,ch1_mmhg,flags
+120,61,36.8,41,42,
+300120,150061,36.8,43,44,
+600120,300061,36.9,45,46,
+900120,450061,36.9,42,43,
+1200120,600061,37.0,44,45,
+1500120,750061,37.0,45,46,
+1800120,900061,37.0,43,44,
+2100120,1050061,37.1,44,45,
+2400120,1200061,37.1,42,43,
+2700120,1350061,37.1,43,44,
+3000120,1500061,37.1,45,46,
+3300120,1650061,37.1,42,43,
+3600120,1800061,37.1,44,45,
+3900120,1950061,37.2,45,46,
+4200120,2100061,37.2,43,44,
+4500120,2250061,37.2,44,45,
+4800120,2400061,37.2,42,43,
+5100120,2550061,37.3,43,44,
+5400120,2700061,37.3,45,46,
+5700120,2850061,37.4,42,43,
+6000120,3000061,37.4,44,45,
+6300120,3150061,37.5,45,46,
+6600120,3300061,37.5,43,44,
+6900120,3450061,37.6,44,45,
+7200120,3600061,37.6,42,43,
+7500120,3750061,37.6,43,44,
+7800120,3900061,37.6,45,46,
+8100120,4050061,37.6,42,43,
+8400120,4200061,37.7,44,45,
+8700120,4350061,37.7,45,46,
+9000120,4500061,37.7,43,44,
+9300120,4650061,37.7,44,45,
+9600120,4800061,37.7,42,43,
+9900120,4950061,37.8,43,44,
+10200120,5100061,37.8,45,46,
+10500120,5250061,37.8,42,43,
+
+# ---- gap summary (full capture) ----
+# STATUS bursts emitted: 0 (feature present from image 3.1.0)
+# window-seq gaps observed: 0 across all 3 h — seq is contiguous
+# ring-overflow counters (svc self-report at session end): 0
+# NOTE for the fleet trail: this slot was re-imaged 3.0.4 -> 3.1.2 ->
+# 3.2.1 without hardware change; the gap signature appears exactly at
+# the image step that introduced the STATUS burst cadence.

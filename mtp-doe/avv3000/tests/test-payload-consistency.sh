@@ -5,13 +5,25 @@ set -euo pipefail
 #
 # 1. Size gates. §3/§6 token targets per payload doc. Kept hermetic (no
 #    tokenizer, no network): word counts x a documented per-doc calibrated
-#    ratio. Calibrated 2026-09-10 with llama-tokenize against the fixture's
-#    runtime tokenizer (Qwen3.8-27B-UD-Q4_K_XL.gguf): errata 2.01,
-#    appnote 1.85, axi 1.76 t/w (table/markdown density); field artifacts
-#    (log/csv/py/txt) ≈ 1.5. DATA SHEET RECALIBRATED 2026-09-10 after the
-#    S1 expansion (prose share up, mix shifted 2.07 -> 1.92; measured
-#    52 187 real tokens / 27 208 words). Re-calibrate when a doc's
-#    table/prose mix changes materially.
+#    ratio. Ratios below are MEASURED against the fixture's runtime
+#    tokenizer (Qwen3.8-27B-UD-Q4_K_XL.gguf, llama-tokenize), history:
+#      2026-09-10 initial + datasheet recalibration (52 187 tok / 27 208 w).
+#      2026-09-11 full recalibration after the S1 expansion sessions —
+#        datasheet 1.92 (unchanged; re-measured 52 249 / 27 208 after the
+#                  Table A-2 literal fix)
+#        appnote  1.73  (measured 11 040 / 6 374; prose+table mix diluted
+#                  the old all-tables 1.85)
+#        axi      1.63  (measured 16 316 / 10 017; ASCII-table ratio of
+#                  the expansion sits below the old 1.76)
+#        field    2.90  (measured 42 125 / 14 395 aggregate; mix moved
+#                  from log-lines-dominant toward the prose report family
+#                  — numeric capture lines are the token-expensive genre,
+#                  which is why the aggregate ratio nearly doubled)
+#        errata   2.01  (re-verified 2.009)
+#      NOTE field measured total ~42K runs above the plan §3 "~28K" line:
+#      the ~ targets were set against the old 1.5-ratio view; S8 dry-run
+#      retunes difficulty levers, the corpus shape (dense navigable prose)
+#      is deliberate. Re-calibrate when a doc's mix changes materially.
 # 2. Cross-ref discipline (plan §6-S1): every §/Table/ES id cited from ANY
 #    payload doc or any rtl/fw/svc/gui/sim source must exist in the payload.
 #    AM004-qualified refs point at the full spec, not the excerpt — the
@@ -24,9 +36,9 @@ set -euo pipefail
 #   default: gate mode, exit 1 on any failure
 #   --report: print the size table only, exit 0 (authoring scratch mode)
 #
-# Known gaps (S1 follow-ups): field/appnote/axi docs are authored BELOW the
-# §3 targets — their gates are expected RED until the follow-up sessions;
-# `make payload-check` stays OUT of `make check` until all four pass.
+# Status 2026-09-11: all four §3 size gates GREEN (datasheet + appnote +
+# axi + field corpus, S1 expansion sessions) — `payload-check` is WIRED
+# INTO `make check`. Re-breaking a gate re-opens the S1 follow-up column.
 
 export LC_ALL=C   # byte-stable sort/grep across locales (payload holds UTF-8)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -38,14 +50,14 @@ PAYLOAD="$ROOT/payload"
 # is the §6 hard band edge 50–60K; the rest sit slightly under "~N K" targets)
 declare -a SIZE_ROWS=(
   "ADS-8851-datasheet.md|50000|1.92|62000"
-  "appnote-ava-qc-staircase.md|11000|1.85|16000"
-  "axi-lite-excerpt.md|16000|1.76|24000"
+  "appnote-ava-qc-staircase.md|11000|1.73|16000"
+  "axi-lite-excerpt.md|16000|1.63|24000"
 )
 ERRATA="ES-2026-04-errata.md"
 ERRATA_RATIO=2.01
 # field/: all field artifacts count toward one aggregate target
 FIELD_MIN_TOTAL=26000
-FIELD_RATIO=1.5
+FIELD_RATIO=2.9
 
 FAIL=0
 REPORT=0
