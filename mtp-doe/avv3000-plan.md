@@ -125,9 +125,12 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
        Accept: green on golden, r_svc/r_gui wired in score.sh.
        (DONE 2026-09-10 piter — Qt 6.11.2 now installed, r_gui live;
        `./score.sh` first run = 75/100 with r_sim pending only.)
-- [ ] **S5 sim (≈0.5 d, optional-vip)** — plant.c single-file deterministic
+- [x] **S5 sim (≈0.5 d, optional-vip)** — plant.c single-file deterministic
       plant; occlusion clamp test; fv_staircase trace test vs golden waveform
       (tolerance + seed fixed). Accept on golden.
+      (DONE 2026-09-10 yueh — golden `./score.sh` = 100/100, ladder exec 2.4 s;
+      see progress log below. Two payload/RTL flags for S1/S6 were found
+      while building — do not lose them.)
 - [ ] **S6 seed (0.5 d — MICHAEL HANDS-ON, the craft)** — apply bugs per
       §4/§2-variant on top of golden per seed/BUGS.md protocol; verify each
       rung's fail-catch; variant b = rotate bugs + profile b. Accept: variant-a
@@ -576,3 +579,87 @@ then golden verification = 100/100 (expect, post-S5).
   value-preserving and canonical-stable. Lesson generalizes for S6/S7:
   any interface-type decision needs the domain written down where the
   code cites it (telem_svc.h now cites Table 5-1).
+
+## Progress log — 2026-09-10 (yueh, S5 sim session)
+
+**Goal: plan stage "S5 sim". DONE — golden ladder `./score.sh` = 100/100**
+(all seven rungs PASS; full-ladder TEST EXECUTION 2.4 s, budget < 90 s).
+`make check` = rtl+fw+svc+sim (sim joined the gate; gui stays Qt-gated).
+
+### Built (sim/)
+- `plant.h/plant.c` — THE plant: single state (pressure, Q16), explicit
+  Euler at 1 ms, seeded LCG noise. Parameters derive from AN-8851-07 §4 in
+  plant.h: DC gain 6.0012 (profile-A peak 720 counts vs the 960-count
+  ALARM_CFG clamp = 25 % margin), tau 40 ms (95 % in 3·tau <= 2 x tightest
+  hold; plateau-end lag <0.2 %), relief 32000 counts (below 32767
+  full-scale, above every reachable OCCL_TH), noise +/-1 count, seed
+  0x5eed51a7. No floats, no libc time — hermetic like the rest.
+- `model_waveform.{h,c}` — C mirror of rtl/waveform.sv at ms cadence (the
+  D3 "engine cadence lives in sim/" home). State machine mirrors the RTL
+  branch-for-branch, incl. wave_q retention through stop, cfg_wr decode
+  from write data, ES-2.1.2 deferred HOLD at cycle end.
+- `port_sim.c` — hal port + world: 1 ms = wf_clock + pump-command register
+  (§8.1: once the engine RUNs, the port keeps commanding WAVE_DATA — same
+  value fw would write; pre-engagement the host owns the pump, which is
+  how fv_occl commands the fault case) + CH0 injection + mdl_tick(10000).
+  WAVE_DATA/STATUS reads intercepted before the model; WAVE_CFG writes
+  fan out to model reg + mirror edge.
+- `tests/fv_staircase.c` — profile A closed loop (engine→plant→CH0 via
+  the REAL drv poll path): every §4 tolerance as an assertion
+  (plateau-end |e|<=4, rise-95 % <= 2 x hold, overshoot +-7 on ramps,
+  every sample <= 960, DONE pulses once/cycle, CYCLE, alarm quiet,
+  ES-2.1.3-clean); profile C at exact app-note defaults (one-way, 14th
+  plateau sticky, RUN drops, DONE sticky). Noise ON for A (seeded),
+  off for C (6 % of the 24-count C plateau increment = 1.44 counts —
+  +-1 LSB sensor noise cannot live inside it; noise robustness is A's
+  job).
+- `tests/fv_occl.c` — occlusion clamp tests: latch geometry probe (DEB=2
+  -> latches exactly on the 4th OCCL_DET window close, §8.2 "DEB+1 elapsed
+  windows" at next close), latch survives vent, release is ALARM_CLR-only,
+  re-arm walks the debounce from zero; full-bore fault: peak rides to the
+  32000 relief valve, alarm fired long before, peak <= ceiling.
+- `fw/stm32f4/model_ads8851` gained the analog-input seam (additive):
+  `mdl_set_ch0_in()` (feeds window latch AND the §8.2 compare; default =
+  the RTL constant 42, so fw host+qemu suites unchanged — re-verified via
+  ladder) + `mdl_ctrl_state()` peek (no bus, no ES budget, mdl_drdy_line
+  discipline).
+
+### Physics bugs found BY the fixture (both were mine, both deterministic)
+- Q16 flow term shifted per step truncated sub-1-count/ms flows to ZERO —
+  small set-points simply never pumped (the "plant is dead at sp=4" case).
+- Euler ordering: orifice decay applied to p+flow instead of pre-step p
+  biased the DC gain to 5.85 (-2.5 %) — ate the plateau tolerances. The
+  §4 tolerances are tight enough to catch plant-model math errors, which
+  is exactly what they are for.
+
+### FLAGS for S1 / S6 (do not lose)
+1. **app-note/field-range conflict**: AN-8851-07 §3 default holds (A 500,
+   B 800 ms) exceed WAVE_CFG.HOLD_MS 1..255 (§6.13) — drv_wave_start
+   rejects them. fv_staircase runs A at 250 ms (largest legal; §4
+   tolerances are hold-relative, so they transfer). S1 must decide the
+   arbiter: widen the field/scale in §6.13+RTL, or amend §3 defaults.
+   The agent-facing payload currently contradicts itself — fix BEFORE S6.
+2. **waveform.sv golden truncation**: `reg [7:0] holdtop_ms` clamps
+   profile-B HOLD_TOP 1200 -> 176 ms; t_waveform never checks B dwell, so
+   it went unseen. sim mirror follows the ARBITER (1200, app note §3) and
+   says so in a comment. S6: either fix the golden RTL (+ re-run t_waveform)
+   or adopt it as a seedable golden-bug candidate with a B-dwell t_waveform
+   check.
+3. §8.2 wording for S1: the golden geometry (RTL wire + model) is
+   occ_cnt > DEB checked PRE-increment — ALARM_OCCL observably latches on
+   the close that FOLLOWS DEB+1 consecutive DET windows. fv_occl pins "4th
+   DET window with DEB=2"; keep the §8.2 text consistent with that.
+
+### Where F1 homes in the seed (S6 reference)
+fv_* exercises the F1 layer for this rung through the REAL driver: stub/
+break `ads8851_wave_*` (§8.1/§6.13) or the §8.1 WF_EN arming path -> trace
+goes flat -> accuracy/DONE/CYCLE assertions fail. RTL waveform.sv stubs
+are caught by r_rtl (t_waveform); the sim mirror is device-side truth
+(never a DUT), same rule as model_ads8851.c vs the fw suite.
+
+### Next
+S1 datasheet expansion to the 50-60K gate — MUST carry flags 1-3 (the
+three docs must stop contradicting each other before seeding). Then S6
+(Michael: B-homing notes all in-code now, incl. this entry for the sim
+rung), S7 protocol, S8 dry run. Golden tree: `./score.sh` = 100 is the
+regression to re-verify after any payload/RTL touch.

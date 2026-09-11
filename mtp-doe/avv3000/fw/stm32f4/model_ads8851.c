@@ -49,8 +49,9 @@ static void mzero(void *p, unsigned n)
 
 #define MDL_LOG_CAP 128u
 
-/* CH constants == rtl/ads8851_ctrl.sv (ch0_res = 42; data_regs latch
- * 42/43/0...). OCCL compare uses 64-LSB units (Table 8-3). */
+/* CH default inputs == rtl/ads8851_ctrl.sv (ch0_res = 42; data_regs latch
+ * 42/43/0...) unless sim/ drives CH0 via mdl_set_ch0_in(). OCCL compare
+ * uses 64-LSB units (Table 8-3). */
 #define MDL_CH0_CONST 42u
 #define MDL_CH1_CONST 43u
 
@@ -68,6 +69,8 @@ typedef struct {
     /* occlusion (§8.2) */
     uint8_t  occ_cnt;     /* consecutive closed windows with OCCL_DET */
     uint8_t  latched;     /* ALARM_STATUS[5] sticky */
+    /* analog input (sim/): CH0 sample source, default = RTL constant */
+    uint32_t ch0_in;
 } mdl_state;
 
 static mdl_state s;
@@ -94,6 +97,7 @@ static void reset_regs(void)
     s.alarm_cfg  = 0x00001E0Fu;
     s.irq_mask   = 0x0000001Fu;
     s.th_rate    = 0x00000168u;
+    s.ch0_in     = MDL_CH0_CONST;  /* RTL constant unless sim/ drives it */
 }
 
 void mdl_reset(void)
@@ -147,13 +151,17 @@ uint32_t mdl_ticks_until_close(void)
 
 uint32_t mdl_seq(void) { return s.seq; }
 int mdl_drdy_line(void) { return s.drdy; }
+uint32_t mdl_ctrl_state(void) { return s.ctrl; }
+void mdl_set_ch0_in(uint32_t raw) { s.ch0_in = raw; }
 
-/* RTL ch0_res constant drives the occlusion compare level (§8.2) */
+/* CH0 input drives the occlusion compare level (§8.2). Source: the RTL
+ * constant by default; sim/ drives the plant pressure through
+ * mdl_set_ch0_in() (fw unit tests never touch it). */
 static uint8_t occldet_level(void)
 {
     uint32_t th_unit = (s.alarm_cfg & 0xFu) * 64u; /* OCCL_TH x 64 LSB */
     return (uint8_t)((s.ctrl & ADS8851_CTRL_ADC_EN) &&
-                     (MDL_CH0_CONST >= th_unit));
+                     (s.ch0_in >= th_unit));
 }
 
 /* ---- window close: §7.1 step 4 + §8.2 debounce ---- */
@@ -169,7 +177,7 @@ static void window_close(void)
     s.seq = (uint8_t)(s.seq + 1u);
     s.drdy = 1u;
     s.win_reads = 0u;
-    s.data[0] = MDL_CH0_CONST;
+    s.data[0] = s.ch0_in & 0xFFFFu;   /* mdl_set_ch0_in source (§5) */
     s.data[1] = MDL_CH1_CONST;
     for (uint32_t i = 2u; i < ADS8851_NCH; i++)
         s.data[i] = 0u;

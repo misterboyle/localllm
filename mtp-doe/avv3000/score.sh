@@ -5,8 +5,9 @@
 # full ladder TEST EXECUTION must stay < 90 s (builds belong to `make check`).
 #
 # Rung statuses: PASS (scored), FAIL (0), SKIP (0, tool missing — r_gui
-# without Qt), PENDING (0, stage not built yet — r_sim before S5).
-# Golden tree expectation: 100 once all stages exist (r_sim lands S5).
+# without Qt), PENDING (0, stage not built yet — the ladder is complete
+# since S5 landed r_sim; PENDING now only guards a deleted sim/Makefile).
+# Golden tree expectation: 100 with every stage present.
 #
 # S7 extends this with head-to-head ingestion (source tag, mtp-harvest);
 # the rung table below is the contract S7 consumes unchanged.

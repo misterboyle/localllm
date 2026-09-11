@@ -28,6 +28,20 @@ int mdl_drdy_line(void);           /* STAT.DRDY flag state (DRDY_N) — peek onl
 uint32_t mdl_win_len(void);             /* current window length, ACLK */
 uint32_t mdl_ticks_until_close(void);
 uint32_t mdl_seq(void);
+uint32_t mdl_ctrl_state(void);       /* CTRL peek (§6.7): no bus read —
+                                       * costs no ES-2.1.3 budget, logs no
+                                       * event; same discipline as the peek
+                                       * above. Used by sim/ to sample
+                                       * WF_EN/ADC_EN each world ms. */
+
+/* ---- analog input drive (sim/ S5; fw unit tests leave it alone) ----
+ * The RTL digital core latches a constant CH0 (ch0_res = 42) because the
+ * plant is modeled in sim/, not in rtl/. mdl_set_ch0_in overrides the
+ * ADC-input side only: it feeds BOTH the window-close CH0 latch
+ * (§5 / Table 5-1) and the occlusion compare (§8.2 / Table 8-3).
+ * Default (and after mdl_reset) is the RTL constant, so every existing
+ * host/qemu test keeps its exact expectations. */
+void mdl_set_ch0_in(uint32_t raw);
 
 /* ---- test observations ---- */
 typedef struct {
