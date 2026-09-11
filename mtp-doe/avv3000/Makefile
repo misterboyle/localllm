@@ -1,9 +1,14 @@
 # AVV-3000 fixture — top-level quality gate (plan R2: make -C avv3000 check).
 # Rungs land one stage at a time; score.sh (S7) wires the same targets into
 # the ladder.
-.PHONY: check rtl fw svc sim gui clean
+.PHONY: check payload-check rtl fw svc sim gui clean
 
 check: rtl fw svc sim
+
+# S1 payload gate (S1 acceptance tooling). Stays OUT of `check` until all
+# four §3 size gates go green — follow-up sessions author appnote/axi/field.
+payload-check:
+	@tests/test-payload-consistency.sh
 
 rtl:
 	@$(MAKE) -C rtl/tb run

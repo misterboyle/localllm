@@ -134,7 +134,7 @@ back-to-back writes (§4.3).
 
 ARVALID/ARREADY handshake gates address acceptance; RVALID/RREADY gates data
 return. Reads are non-destructive except as specified in §6.9 (STAT) and
-§6.21 (read-to-clear counters); see also ES-2026-04 ES-2.1.3.
+§6.16 (read-to-clear counters); see also ES-2026-04 ES-2.1.3.
 
 ### 4.3 RESP rules (write path)
 
@@ -450,9 +450,33 @@ The host reads one window result per SDR window:
 - H-4: The recommended cadence is: (a) wait BUSY deassert (or DRDY_N), (b)
   single STAT read, (c) if DRDY: read 8-word data port, (d) process.
 
-§7.4.2 (legacy, superseded): the Rev-A datasheet sequence diagram showed a
-two-read STAT pattern (read → "confirm" re-read) as best practice. **This is
-contradicted by ES-2026-04 ES-2.1.3 and must not be used on Rev-B silicon.**
+#### 7.4.1 DRDY_N signal
+
+`DRDY_N` (pin 14) is the hardware ready strobe: it pulses LOW for ≥ 1 ACLK
+(≤ 2 ACLK, §9.3) at every window close, coincident with `STAT.DRDY` being
+set (§7.1 step 4). The pulse is edge information only — it does NOT carry
+the destructive-read semantics of §6.9: sensing DRDY_N tells the host a
+window committed; the window result becomes readable after the single
+permitted STAT read (H-2).
+
+Two paths leave the device at window close and must not be conflated:
+
+- `DRDY_N` pin: unconditional while `CTRL.ADC_EN=1`; not affected by
+  `IRQ_MASK`. With `ADC_EN=0` the pin stays inactive-high; in LPM (§7.3)
+  pulsing stops at the final window.
+- `IRQ` pin (§6.12): level signal from latched alarms, plus an optional
+  DRDY-edge term when `IRQ_MASK.M_DRDY=1`.
+
+Hosts with an external interrupt controller should edge-trigger DRDY_N
+(falling) rather than level-sample it: the pulse can be as short as one
+10 MHz period. Level pollers should use STAT (once, per H-2), never
+DRDY_N state.
+
+#### 7.4.2 Two-read STAT pattern (Rev-A legacy — superseded)
+
+The Rev-A datasheet sequence diagram showed a two-read STAT pattern
+(read → "confirm" re-read) as best practice. **This is contradicted by
+ES-2026-04 ES-2.1.3 and must not be used on Rev-B silicon.**
 
 ---
 
