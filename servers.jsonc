@@ -126,7 +126,7 @@
         // NB: absolute path — serve does NOT expand ~ inside args (bin/model yes)
         "-md", "/Users/michael/localllm/mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
         "--spec-type", "draft-mtp",
-        "--spec-draft-n-max", "2",
+        "--spec-draft-n-max", "3",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
@@ -134,6 +134,41 @@
         "--image-min-tokens", "1024",
         "--chat-template-kwargs", "{\"reasoning_effort\":\"xhigh\",\"preserve_thinking\":true}",
         "-lv", "4"
+      ]
+    },
+    // GLM-5.3-Flash UD-IQ3_XXS (Z.ai "ox-alpha"): 321B MoE / 18B active, arch
+    // glm5next — hybrid MLA+sparse-indexer (only ~12 of 46 layers are full
+    // attention, rest linear/KDA) + 288-expert MoE; native 1M ctx; thinking
+    // template takes reasoning_effort low|high|max (default max). 120.4GB
+    // weights on a 128GB box: ALL-GPU IS IMPOSSIBLE (weights alone exceed the
+    // ~115.4GB Metal working-set ceiling we measured on flash-next) — this
+    // entry leans on llama.cpp memory auto-fit (-fit on) to pick the GPU/CPU
+    // layer split + KV budget from free memory at boot.
+    // NO OTHER BINARY CAN OPEN THIS FILE: glm5next exists only in unsloth's
+    // PR ggml-org/llama.cpp#27754 branch. Built at ~/llama.cpp-glm5
+    // (branch glm5next/upstream @ d94f44e, 2026-09-11). CPU-only load
+    // (mmap, -ngl 0) verified healthy; Metal ladder = probe-glm53.sh.
+    // Sampling: unsloth recommended (temp 1.0, top_p 0.95; matches GGUF
+    // general.sampling.* metadata).
+    // MTP ready but OFF until ctx sizing is settled: this branch has
+    // --spec-type draft-mtp with the nextn layer EMBEDDED in the GGUF
+    // (no -md file, unlike flash-next-mtp) — unsloth claims 3.3x at long
+    // ctx, n-max 2 (their table + our flash-next sweep agree).
+    // Mutually exclusive with every big-llama entry (memory, not ports).
+    "glm53": {
+      "backend": "llamacpp",
+      "bin": "~/llama.cpp-glm5/build/bin/llama-server",
+      "model": "~/.cache/huggingface/hub/models--unsloth--GLM-5.3-Flash-GGUF/snapshots/621d456e93e926e4b52f85cff5f634358c1828f9/UD-IQ3_XXS/GLM-5.3-Flash-UD-IQ3_XXS-00001-of-00004.gguf",
+      "port": 30086,
+      "args": [
+        // fitter picks n_gpu_layers + ctx from free memory; -fitp logs its
+        // choices. Placeholder sizing until probe-glm53.sh reports the real
+        // Metal ceiling — update args with the verified max working ctx.
+        "-fit", "on",
+        "-fitp", "on",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--chat-template-kwargs", "{\"reasoning_effort\":\"max\"}"
       ]
     },
     "mlx-dense": {
