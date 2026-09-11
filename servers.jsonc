@@ -161,11 +161,16 @@
       "model": "~/.cache/huggingface/hub/models--unsloth--GLM-5.3-Flash-GGUF/snapshots/621d456e93e926e4b52f85cff5f634358c1828f9/UD-IQ3_XXS/GLM-5.3-Flash-UD-IQ3_XXS-00001-of-00004.gguf",
       "port": 30086,
       "args": [
-        // fitter picks n_gpu_layers + ctx from free memory; -fitp logs its
-        // choices. Placeholder sizing until probe-glm53.sh reports the real
+        // Fitter picks n_gpu_layers + ctx from free memory. It's ON by
+        // default in this build, listed explicitly anyway. NOTE: -fitp
+        // (--fit-print) does not exist in llama-server (only in the
+        // llama-fit-params tool) — fit's choices log at DEBUG: add
+        // "-lv","4" when diagnosing. Also NOTE: the fitter only counts
+        // THIS process's Metal budget — never start glm53 while another
+        // big model (flash-next*/mtp-vision) holds memory.
+        // Placeholder sizing until probe-glm53.sh reports the real
         // Metal ceiling — update args with the verified max working ctx.
         "-fit", "on",
-        "-fitp", "on",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--chat-template-kwargs", "{\"reasoning_effort\":\"max\"}"
