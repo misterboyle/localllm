@@ -104,7 +104,11 @@ outside the timer). Stage-6 acceptance includes "bug-free golden tree scores
 - [x] **S0 scaffold (≈0.5 d)** — dirs, env.sh pins, empty score.sh + one
       passing smoke rung, README runbook skeleton, .gitignore (seed/, runs/).
       Accept: `./score.sh` runs, prints ladder with smoke rung, git clean.
-- [ ] **S1 payload (≈1 d, THE long pole)** — write ADS-8851 datasheet (target
+- [ ] **S1 payload (≈1 d, THE long pole)** — DATASHEET DONE 2026-09-10
+      (52.2K tok measured in-band; consistency tool wired as
+      `make payload-check`; appnote/axi/field expansions remain with §3
+      targets already encoded as RED gates — progress log 09-10 mapes).
+      Original scope: write ADS-8851 datasheet (target
       50–60K tok: register map tables, §7 init sequence, SDR waveform timing
       diagram in ASCII), errata sheet (ES-2.1.3 written to contradict §7.4.2),
       appnote (profiles a/b/c), AXI-Lite excerpt, field artifacts (hand-crafted
@@ -743,3 +747,63 @@ B-dwell coarse polling, clean-rebuild liveness), S8 dry run.
   source of truth. Fast-cadence choices belong in engine benches
   (t_waveform HOLD_MS=1 — tests geometry, not the profile spec), and must
   say so.
+
+## Progress log — 2026-09-10 (mapes, S1 datasheet-expansion session)
+
+**Goal: plan stage "S1 payload" (datasheet half) + S1 acceptance tooling.
+DONE for the datasheet: `payload/ADS-8851-datasheet.md` 4.6K → 27.2K
+words / **52 187 measured tokens** (Qwen3.8 tokenizer — the fixture's
+runtime tokenizer; in the §6 50–60K band). `make check` green; golden
+`./score.sh` = **100/100** after all payload touches. Zero rtl/fw/svc/
+gui/sim code changes.**
+
+Built/fixed this session:
+- **tests/test-payload-consistency.sh** (S1 acceptance tooling, commit
+  1999dfb): §3 size gates via word-count × per-doc calibrated ratio
+  (calibrated with llama-tokenize against Qwen3.8-27B — hermetic gate,
+  no network), §/Table/ES cross-ref resolution for payload docs AND
+  code-side citations (plan §6-S1 discipline), Table 6-1 ↔ ads8851_defs.h
+  register pin. Wired as `make payload-check`; deliberately OUT of
+  `check` until all four §3 gates go green (appnote/axi/field are the
+  encoded RED follow-ups — targets 11K/16K/26K est-tok).
+- **Datasheet**: body grew §4.5/§5.1/§6.1–6.6/§7.1.1/§7.2.1/§8.4/§9.2.1/
+  §9.4 + Tables 5-2/6-2/6-3/7-5/8-2/8-4 + appendices A–Y (use-case
+  sequences, characterization, engine reference, sequencer/bus internals,
+  plant app notes, production test, errata matrix, reliability, glossary,
+  diagnostics, layout, change log, circuits, AVV-2200 lineage, figures,
+  lot/test data, worked AXI transcripts, FAQ, counter forensics, support
+  Q&A, symbols) + generated TOC/LOT/LOF. Every existing §/Table anchor
+  cited by code is byte-preserved (tool-verifies in both directions).
+- **Doc bugs found & fixed while making the docs greppable**: §4.2 dead
+  ref §6.21 → §6.16; §7.4.1/7.4.2 promoted to real headings (code cited
+  them; they were inline-bold text only); Table 8-3's 0x1E row was
+  unrepresentable in OCCL_TH [3:0] → rewritten within range + new
+  Table 8-2 (DEB encoding; matches fv_occl's DEB=2→4th-close geometry
+  and the FLAG-3 pre-increment wording); `field/thermal-derating.csv`
+  occl_margin column was NOT the 6σ rule its header states (mixed
+  6/7/8σ) — corrected strictly (37 °C margin 832 → **864**; decoey-vs-
+  real conclusion unchanged — nothing pins the old numbers (grepped)).
+- **Consistency anchors held**: §9.2 SNR 71/82 dB ↔ Table B-4 noise cols
+  ↔ csv fleet floors; HOLD_ms<<2 literal table (A.2/A.5/V.1) matches
+  drv wave_start packing; plant G=6/τ=40/relief 32000 ↔ E.1/E.5/C.5
+  (profile-A CH0 top 720 = 25 % under OCCL 960 = the AN §4 clamp math);
+  profile C ends tick-14=56; latch geometry everywhere = DEB+2 close.
+- **Tool recalibrated**: datasheet ratio 2.07 → 1.92 post-expansion
+  (prose share); estimate now tracks measured within 0.1 %.
+
+Notes for later stages:
+- S6: no behaviour touched; predicted scalars unaffected. Doc-side seed
+  homing unchanged (BUGS.md candidate list intact, incl. holdtop-width).
+- S7 README lesson carried: the fixture corpus now has one deliberately
+  *wrong-in-the-past* artifact (the Rev-A §7.4.2 text exists only as a
+  superseded heading + L-1/G-1 rows) — a clean second decoy family for
+  agents that grep without reading revision status.
+- S8 difficulty: appendices state the ticket's causal chains fairly
+  explicitly (echoing i2c.pcap's own analysis notes by design — the
+  payload is large-navigable, not puzzle-boxed). If the dry run comes in
+  over the golden−30..−55 band, the retune lever is appendix J/W
+  explicitness, NOT §6/§7.2 (they're the contract).
+
+Next: appnote → ~12K tok, axi-lite extract → ~18K, field corpus → ~28K
+(gates already encode this; gen_uart.py makes uart.log extension nearly
+free) — then flip `payload-check` onto make check; S6 stays Michael's.

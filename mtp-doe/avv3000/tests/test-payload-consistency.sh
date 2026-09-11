@@ -6,9 +6,11 @@ set -euo pipefail
 # 1. Size gates. §3/§6 token targets per payload doc. Kept hermetic (no
 #    tokenizer, no network): word counts x a documented per-doc calibrated
 #    ratio. Calibrated 2026-09-10 with llama-tokenize against the fixture's
-#    runtime tokenizer (Qwen3.8-27B-UD-Q4_K_XL.gguf): datasheet 2.07,
-#    errata 2.01, appnote 1.85, axi 1.76 t/w (table/markdown density);
-#    field artifacts (log/csv/py/txt) ≈ 1.5. Re-calibrate when a doc's
+#    runtime tokenizer (Qwen3.8-27B-UD-Q4_K_XL.gguf): errata 2.01,
+#    appnote 1.85, axi 1.76 t/w (table/markdown density); field artifacts
+#    (log/csv/py/txt) ≈ 1.5. DATA SHEET RECALIBRATED 2026-09-10 after the
+#    S1 expansion (prose share up, mix shifted 2.07 -> 1.92; measured
+#    52 187 real tokens / 27 208 words). Re-calibrate when a doc's
 #    table/prose mix changes materially.
 # 2. Cross-ref discipline (plan §6-S1): every §/Table/ES id cited from ANY
 #    payload doc or any rtl/fw/svc/gui/sim source must exist in the payload.
@@ -35,7 +37,7 @@ PAYLOAD="$ROOT/payload"
 # ratio = tokens/word calibration above; min = §3 token target (50K datasheet
 # is the §6 hard band edge 50–60K; the rest sit slightly under "~N K" targets)
 declare -a SIZE_ROWS=(
-  "ADS-8851-datasheet.md|50000|2.07|62000"
+  "ADS-8851-datasheet.md|50000|1.92|62000"
   "appnote-ava-qc-staircase.md|11000|1.85|16000"
   "axi-lite-excerpt.md|16000|1.76|24000"
 )

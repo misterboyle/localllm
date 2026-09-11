@@ -6,16 +6,16 @@ temp_c,gain_err_pct,offset_lsb,ch0_noise_lsb,occl_margin_lsb,note
 22,+0.02,-1,4,936,
 25,+0.02,-1,4,936,
 28,+0.00,0,5,930,
-31,-0.05,+1,6,918,
-34,-0.15,+3,9,888,
-37,-0.36,+8,16,832,   <- field-ticket operating point (37 C): margin 832 LSB still
-38,-0.42,+9,19,808,     > 100 LSB; a single dropped sample window (see i2c.pcap.txt
-40,-0.58,+12,28,736,    and ES-2.1.3) is the real false-alarm path, not gain drift
-45,-0.90,+18,52,536,
-50,-1.30,+26,71,434,
-60,-2.10,+40,110,266,
-75,-3.40,+70,190,64,   <- margin collapses at 75 C: genuine risk zone, alarm expected
-85,-4.80,+105,300,-168,  <- beyond datasheet accuracy spec; ALARM_HTEMP should
+31,-0.05,+1,6,924,
+34,-0.15,+3,9,906,
+37,-0.36,+8,16,864,   <- field-ticket operating point (37 C): margin 864 LSB still
+38,-0.42,+9,19,846,     > 100 LSB; a single dropped sample window (see i2c.pcap.txt
+40,-0.58,+12,28,792,    and ES-2.1.3) is the real false-alarm path, not gain drift
+45,-0.90,+18,52,648,
+50,-1.30,+26,71,534,
+60,-2.10,+40,110,300,
+75,-3.40,+70,190,-180,  <- margin collapses at 75 C: genuine risk zone, alarm expected
+85,-4.80,+105,300,-840,  <- beyond datasheet accuracy spec; ALARM_HTEMP should
                           #  have fired long before this point
 # References: datasheet Rev B §9.2 (accuracy), ES-2026-04 ES-2.1.3 (read
 # destructiveness), TICKET.md (field symptom).
