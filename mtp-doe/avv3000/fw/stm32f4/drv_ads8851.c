@@ -149,10 +149,10 @@ void ads8851_safety_gate(uint32_t gate)
 int ads8851_wave_start(uint32_t profile, uint32_t hold_ms,
                        uint32_t step_lsb, int invert)
 {
-    /* Field ranges (§6.13): PROFILE 1..A/B/C, HOLD_MS 1..255,
-     * STEP_LSB 1..63. Profile constants themselves are AN-8851-07 §3:
-     * A=500 ms/12 LSB, B=800 ms/20 LSB, C=200 ms/4 LSB. */
-    if (profile < 1u || profile > 3u || hold_ms < 1u || hold_ms > 255u ||
+    /* Field ranges (§6.13): PROFILE 1..A/B/C, HOLD_MS 1..16383,
+     * STEP_LSB 1..63 — the field covers the AN-8851-07 §3 profile
+     * defaults: A=500 ms/12 LSB, B=800 ms/20 LSB, C=200 ms/4 LSB. */
+    if (profile < 1u || profile > 3u || hold_ms < 1u || hold_ms > 16383u ||
         step_lsb < 1u || step_lsb > 63u)
         return ADS8851_ERR_ARG;
 
@@ -180,7 +180,7 @@ void ads8851_wave_stop(void)
 
 int ads8851_wave_set_hold(uint32_t hold_ms)
 {
-    if (hold_ms < 1u || hold_ms > 255u)
+    if (hold_ms < 1u || hold_ms > 16383u)   /* §6.13 HOLD_MS domain */
         return ADS8851_ERR_ARG;
 
     uint32_t cfg = ads8851_hw_rd(ADS8851_WAVE_CFG);

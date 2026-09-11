@@ -1,12 +1,17 @@
 // t_waveform.cc — Verilator testbench: AVA-QC staircase engine (F1, §8.1).
 // Rung: r_rtl (15 pts, t_waveform half). Fails at start on the seeded tree
 // (waveform.sv is a stub: WAVE_DATA stays 0, RUN stays 0).
-// Covers: profile A ramp up/down + loop + DONE pulse; profile C one-way +
-// sticky DONE + RUN drop; ES-2.1.2 mid-cycle HOLD_MS deferral.
+// Covers: profile A ramp up/down + loop + DONE pulse; profile B ramp to top
+// + HOLD_TOP 1200 ms dwell + first down-step; ES-2.1.2 mid-cycle HOLD_MS
+// deferral; profile C one-way + sticky DONE + RUN drop.
+// Trace: built with --trace, but VCD is runtime-OFF by default — the B dwell
+// case simulates ~13M cycles and its trace would be hundreds of MB. Debug
+// round: ./obj_dir_twave/t_waveform --vcd
 #include "Vads8851_ctrl.h"
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 #include <cstdio>
+#include <cstring>
 
 static Vads8851_ctrl* top;
 static vluint64_t cyc = 0;
@@ -94,14 +99,31 @@ static vluint64_t wait_wave(int want, vluint64_t max_cyc) {
   return cyc - start;
 }
 
+// coarse wait: tick until wave_out differs from want; poll every poll_cyc
+// cycles so long dwells stay cheap (exact-value polling over 12M cycles is
+// not). Returns cycles used (coarse +- poll_cyc; margins account).
+static vluint64_t wait_neq(int want, vluint64_t max_cyc, vluint64_t poll_cyc) {
+  vluint64_t start = cyc;
+  while (cyc - start < max_cyc) {
+    for (int i = 0; i < (int)poll_cyc && cyc - start < max_cyc; i++) tick();
+    if ((int)wave_val() != want) return cyc - start;
+  }
+  return cyc - start;
+}
+
 // ------------------------------------------------------------------
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv);
-  Verilated::traceEverOn(true);
   top = new Vads8851_ctrl;
-  tfp = new VerilatedVcdC;
-  top->trace(tfp, 99);
-  tfp->open("trace.vcd");
+  int vcd = 0;
+  for (int i = 1; i < argc; i++)
+    if (strcmp(argv[i], "--vcd") == 0) vcd = 1;
+  if (vcd) {
+    Verilated::traceEverOn(true);
+    tfp = new VerilatedVcdC;
+    top->trace(tfp, 99);
+    tfp->open("trace.vcd");
+  }
   top->clk_i = 0;
   reset();
   axi_idle();
@@ -113,7 +135,7 @@ int main(int argc, char** argv) {
   axi_write(0x04, 0x00);            // 1 ms window (fast test)
 
   // ---- profile A: 10 up + 10 down @ 12 LSB, hold 1 ms, loop ----
-  axi_write(0x14, (1 << 0) | (1 << 2) | (12 << 10));   // PROFILE=A, HOLD_MS=1, STEP=12
+  axi_write(0x14, (1 << 0) | (1 << 2) | (12 << 16));   // PROFILE=A, HOLD_MS=1, STEP=12
   axi_write(0x00, 0x01 | 0x02);     // ADC_EN | WF_EN
 
   CHECK(wave_val() == 0, "wave starts at 0");
@@ -140,14 +162,33 @@ int main(int argc, char** argv) {
   // rewrite WAVE_CFG with HOLD_MS=2; the NEXT step (24) must still come at
   // ~1 ms cadence; only after cycle end does the cadence become 2 ms.
   t1 = wait_wave(12, 30000);        // iteration-2 step 1
-  axi_write(0x14, (1 << 0) | (2 << 2) | (12 << 10));   // HOLD_MS 1 -> 2
+  axi_write(0x14, (1 << 0) | (2 << 2) | (12 << 16));   // HOLD_MS 1 -> 2
   vluint64_t start = cyc;
   vluint64_t t3 = wait_wave(24, 30000);
   CHECK(t3 < 20000, "mid-cycle HOLD_MS change deferred (step still ~1 ms, ES-2.1.2)");
 
+  // ---- profile B: 8 up @STEP 20, top dwell HOLD_TOP=1200 ms, 8 down, loop
+  // (app note §3). Stop/restart keeps the geometry deterministic: PROFILE=0
+  // freezes wave_q (preserved, §6.13), and the restart arms a fresh HOLD
+  // instead of inheriting the A cycle's ES-2.1.2-deferral state. The dwell
+  // lower bound catches any top-dwell store too narrow to hold 1200 ms
+  // (e.g. an 8-bit holdtop_ms truncating 1200 -> 176); the upper bound
+  // catches a dwell that never releases. First down-step lands ~1202 ms
+  // into the run (1200 dwell + 1 ms ramp + 1 ms step tick).
+  axi_write(0x14, 0);                                   // stop
+  vluint64_t w0 = wave_val();                           // frozen ramp start
+  axi_write(0x14, (2 << 0) | (1 << 2) | (20 << 16));    // PROFILE=B, HOLD=1, STEP=20
+  vluint64_t b_top = w0 + 8 * 20;
+  vluint64_t tb = wait_wave((int)b_top, 100000);
+  CHECK(tb >= 75000 && tb < 95000, "profile B ramps 8 steps to top (~8 ms @ 1 ms hold)");
+  vluint64_t t5 = wait_neq((int)b_top, 12800000, 20000);
+  CHECK(t5 >= 11500000 && t5 <= 12600000,
+        "B dwells ~1200 ms at top (HOLD_TOP, app note §3) before stepping down");
+
   // ---- profile C: one-way, 14 steps, DONE sticky, RUN drops ----
+  axi_write(0x14, 0);                                   // stop (as in B): deterministic start
   vluint64_t c_start = wave_val();
-  axi_write(0x14, (3 << 0) | (1 << 2) | (4 << 10));    // PROFILE=C, HOLD_MS=1, STEP=4
+  axi_write(0x14, (3 << 0) | (1 << 2) | (4 << 16));     // PROFILE=C, HOLD_MS=1, STEP=4
   // engine re-arms from the current output; up 14 steps of 4 LSB
   vluint64_t c_top = c_start + 14 * 4;
   fprintf(stderr, "C: start=%llu top=%llu\n", (unsigned long long)c_start, (unsigned long long)c_top);
@@ -159,7 +200,7 @@ int main(int argc, char** argv) {
   CHECK((wave_status() & 1) == 0, "RUN dropped (one-way profile)");
   CHECK((wave_status() & 4) == 4, "DONE sticky set (profile C)");
   // a WAVE_CFG write clears DONE
-  axi_write(0x14, (3 << 0) | (1 << 2) | (4 << 10));
+  axi_write(0x14, (3 << 0) | (1 << 2) | (4 << 16));
   CHECK((wave_status() & 4) == 0, "WAVE_CFG write clears DONE");
 
   if (failures) {

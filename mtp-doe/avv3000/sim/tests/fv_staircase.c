@@ -20,11 +20,12 @@
  * 0 ... increments by step every hold ms"), so plateau p rides WAVE_DATA
  * step p. The plant is seeded (sim/plant.c PLANT_NOISE_SEED): hermetic.
  *
- * Hold choice (S1 flag): the app note §3 default hold (A: 500 ms, B: 800)
- * exceeds the WAVE_CFG.HOLD_MS field range 1..255 (§6.13) — the driver
- * rejects it. Profile A runs the largest legal even hold (250 ms); §4
- * tolerances are hold-RELATIVE ("2 x hold"), so the checks transfer unchanged.
- * Profile C runs its app-note defaults (200 ms / 4 LSB) exactly.
+ * Hold choice (S1 flag 1 RESOLVED pre-S6: §6.13 HOLD_MS widened to [15:2],
+ * 1..16383 ms — the app note §3 defaults A 500 / B 800 are writable now).
+ * Profile A still runs at 250 ms on purpose: §4 tolerances are
+ * hold-RELATIVE ("2 x hold"), so the checks transfer at any legal hold and
+ * the short hold keeps r_sim inside the ladder wall-time budget. Profile C
+ * runs its app-note defaults (200 ms / 4 LSB) exactly.
  */
 #include <stdlib.h>
 

@@ -255,7 +255,7 @@ Table 6-1 — register summary
 |---|---|---|---|---|
 | [3:0] | OCCL_TH | RW | 0xF | Occlusion threshold, in units of 64 LSB of CH0 (Table 8-3); reset 0xF = 960 LSB ≈ 88 mmHg |
 | [7:4] | OCCL_HYST | RW | 0x0 | Hysteresis below threshold before alarm releases, same units |
-| [11:8] | OCCL_DEB | RW | 0x0 | Debounce in consecutive windows (0 = 1 window) |
+| [11:8] | OCCL_DEB | RW | 0x0 | Debounce setting N: alarm latches after N+1 consecutive OCCL_DET windows elapse (§8.2 latch geometry) |
 | [15:12] | TH_TEMP | RW | 0x1 | Thermal fault threshold, °C offset above 85 °C (0 = 85 °C, 1 = 86 °C, …) |
 | [31:16] | rsvd | RW | 0 | Reserved, write 0 |
 
@@ -263,7 +263,7 @@ Table 6-1 — register summary
 
 | Bits | Field | Access | Reset | Description |
 |---|---|---|---|---|
-| [0] | ALARM_OCCL | RO | 0 | Occlusion alarm: OCCL_DET asserted for ≥ OCCL_DEB consecutive windows. Latched until ALARM_CLR |
+| [0] | ALARM_OCCL | RO | 0 | Occlusion alarm: `OCCL_DEB+1` consecutive OCCL_DET windows elapsed; latches at the next window close (latch geometry, §8.2). Latched until ALARM_CLR |
 | [1] | ALARM_HTEMP | RO | 0 | High-temp fault (TH_POL=0 sense), §8.3 |
 | [2] | ALARM_LTEMP | RO | 0 | Low-temp fault (TH_POL=1 sense), §8.3 |
 | [3] | ALARM_LINE | RO | 0 | Line-pressure divergence: |CH1 − CH0| > 25 % of CH0 for ≥ 8 windows |
@@ -287,10 +287,10 @@ Table 6-1 — register summary
 | Bits | Field | Access | Reset | Description |
 |---|---|---|---|---|
 | [1:0] | PROFILE | RW | 0 | 0 = off, 1 = profile A, 2 = profile B, 3 = profile C (Table 8-1 + app note) |
-| [9:2] | HOLD_MS | RW | 0 | Plateau hold time per step, ms (1..255); engine cadence = HOLD_MS × 1 ms |
-| [15:10] | STEP_LSB | RW | 0 | Step size, LSB of the output span (1..63) |
-| [16] | INVERT | RW | 0 | 1 = invert staircase direction (infusion/withdrawal) |
-| [31:17] | rsvd | RW | 0 | Reserved, write 0 |
+| [15:2] | HOLD_MS | RW | 0 | Plateau hold time per step, ms (1..16383); engine cadence = HOLD_MS × 1 ms. Wide enough for the app-note profile defaults (A 500 ms, B 800 ms) |
+| [21:16] | STEP_LSB | RW | 0 | Step size, LSB of the output span (1..63) |
+| [22] | INVERT | RW | 0 | 1 = invert staircase direction (infusion/withdrawal) |
+| [31:23] | rsvd | RW | 0 | Reserved, write 0 |
 
 ### 6.14 WAVE_DATA (0x18) — Waveform output
 
@@ -483,10 +483,14 @@ drives the pump set-point; CH0 reflects the plant response.
 ### 8.2 Occlusion detection
 
 Per window: `OCCL_DET = (CH0_avg ≥ OCCL_TH)`. OCCL_DET is debounced: the
-occlusion alarm latches when OCCL_DET is true for `OCCL_DEB+1` *
-consecutive* windows. The alarm releases (un-latches) only via ALARM_CLR,
-re-armed by hysteresis: OCCL_DET must drop below `OCCL_TH − OCCL_HYST` for
-the release to stick.
+occlusion alarm latches at the close of the FIRST WINDOW AFTER `OCCL_DEB+1`
+*consecutive* OCCL_DET windows — the debounce count is evaluated at window
+close before that window's increment, so e.g. with OCCL_DEB = 2 the latch is
+observed on the close of the 4th consecutive OCCL_DET window. The alarm
+releases (un-latches) only via ALARM_CLR, re-armed by hysteresis: OCCL_DET
+must drop below `OCCL_TH − OCCL_HYST` for the release to stick. After a
+release, the debounce count restarts at zero: a re-latch requires a fresh
+run of `OCCL_DEB+1` consecutive OCCL_DET windows.
 
 Table 8-3 — OCCL_TH unit conversion (CH0, 64-LSB steps)
 

@@ -131,9 +131,9 @@ module ads8851_ctrl (
     .rst_n_i    (rst_n_i),
     .en_i       (wf_en && adc_en),
     .profile_i  (wave_cfg_reg[1:0]),
-    .hold_ms_i  (wave_cfg_reg[9:2]),
-    .step_lsb_i (wave_cfg_reg[15:10]),
-    .invert_i   (wave_cfg_reg[16]),
+    .hold_ms_i  (wave_cfg_reg[15:2]),
+    .step_lsb_i (wave_cfg_reg[21:16]),
+    .invert_i   (wave_cfg_reg[22]),
     .cfg_wr_i   (wave_cfg_wr),
     .cfg_data_i (wr_data),      // fresh write data (reg NBA-updates same edge)
     .wave_out_o (wave_out),

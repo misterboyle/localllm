@@ -64,7 +64,8 @@
 #define HL_T_CTRL_ACK   0x06u
 
 /* HL_T_CTRL opcodes (AVA-QC wave recipe push = the pump-domain CCM analogue) */
-#define HL_CMD_WAVE_RECIPE 0x10u /* [cmd, profile, hold_ms, step_lsb, invert] */
+#define HL_CMD_WAVE_RECIPE 0x10u /* [cmd, profile, hold_lo, hold_hi (u16 LE,
+                                  * WAVE_CFG.HOLD_MS §6.13), step_lsb, invert] */
 #define HL_CMD_WAVE_LOOP   0x11u /* [cmd, enable]  wave loop run/stop        */
 #define HL_CMD_SELFTEST    0x12u /* [cmd, mode]                              */
 #define HL_CMD_TWEAK       0x13u /* [cmd, sel, lo, hi]  OCCL_TH / I_MOT gain */

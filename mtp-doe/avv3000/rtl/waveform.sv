@@ -24,9 +24,11 @@ module waveform #(
   input  wire               rst_n_i,
   input  wire               en_i,          // WF_EN && ADC_EN
   input  wire [1:0]         profile_i,     // WAVE_CFG[1:0]
-  input  wire [7:0]         hold_ms_i,     // WAVE_CFG[9:2]
-  input  wire [5:0]         step_lsb_i,    // WAVE_CFG[15:10]
-  input  wire               invert_i,      // WAVE_CFG[16]
+  input  wire [13:0]        hold_ms_i,     // WAVE_CFG[15:2] (1..16383 ms).
+                                           // 14-bit keeps hold_lat *
+                                           // CLKS_PER_MS inside tick_cnt
+  input  wire [5:0]         step_lsb_i,    // WAVE_CFG[21:16]
+  input  wire               invert_i,      // WAVE_CFG[22]
   input  wire               cfg_wr_i,      // any WAVE_CFG write
   input  wire [31:0]        cfg_data_i,    // WAVE_CFG write data (with cfg_wr_i)
   output reg  [15:0]        wave_out_o,    // WAVE_DATA
@@ -52,12 +54,16 @@ module waveform #(
 
   state_t st;
 
-  reg [7:0]  hold_lat;      // applied cadence (latched at cycle start)
+  reg [13:0] hold_lat;      // applied cadence (latched at cycle start)
   reg [5:0]  step_lat;      // applied step
   reg [15:0] wave_q;
   reg [27:0] tick_cnt;
   reg [4:0]  step_cnt;
-  reg [7:0]  up_steps, dn_steps, holdtop_ms;
+  reg [7:0]  up_steps, dn_steps;
+  reg [10:0] holdtop_ms;    // profile-local top dwell, ms (app note §3: B =
+                            // 1200). 11-bit width bounds holdtop_ms *
+                            // CLKS_PER_MS inside tick_cnt; an 8-bit store
+                            // here truncates profile B's dwell to 176 ms
   reg        sense;         // 0 = ascending, 1 = descending
   reg        iter_reg;      // 1 once a full cycle completed
   reg [1:0]  profile_applied; // profile the running engine was armed with
@@ -84,15 +90,15 @@ module waveform #(
   // config decode for the cfg_wr edge (fresh write data, NOT the stale
   // register ports — see header note)
   wire [1:0]  cfg_prof = cfg_data_i[1:0];
-  wire [7:0]  cfg_hold = cfg_data_i[9:2];
-  wire [5:0]  cfg_step = cfg_data_i[15:10];
-  wire        cfg_inv  = cfg_data_i[16];
+  wire [13:0] cfg_hold = cfg_data_i[15:2];
+  wire [5:0]  cfg_step = cfg_data_i[21:16];
+  wire        cfg_inv  = cfg_data_i[22];
 
   always @(posedge clk_i or negedge rst_n_i) begin
     if (!rst_n_i) begin
       st        <= ST_IDLE;
       wave_q    <= 16'h0000;
-      hold_lat  <= 8'h00;
+      hold_lat  <= 14'h0000;
       step_lat  <= 6'h00;
       tick_cnt  <= 28'h0;
       step_cnt  <= 5'h0;

@@ -64,11 +64,11 @@
 
 /* ---- WAVE_CFG fields (§6.13) ---- */
 #define ADS8851_WAVE_PROFILE_M 0x00000003u  /* [1:0] 0=off 1=A 2=B 3=C */
-#define ADS8851_WAVE_HOLD_S    2u           /* [9:2]  HOLD_MS, 1..255 ms   */
-#define ADS8851_WAVE_HOLD_M    0x000003FCu
-#define ADS8851_WAVE_STEP_S    10u          /* [15:10] STEP_LSB, 1..63      */
-#define ADS8851_WAVE_STEP_M    0x0000FC00u
-#define ADS8851_WAVE_INVERT    0x00010000u  /* [16] */
+#define ADS8851_WAVE_HOLD_S    2u           /* [15:2] HOLD_MS, 1..16383 ms */
+#define ADS8851_WAVE_HOLD_M    0x0000FFFCu
+#define ADS8851_WAVE_STEP_S    16u          /* [21:16] STEP_LSB, 1..63     */
+#define ADS8851_WAVE_STEP_M    0x003F0000u
+#define ADS8851_WAVE_INVERT    0x00400000u  /* [22] */
 
 /* ---- WAVE_STATUS (§6.15) ---- */
 #define ADS8851_WAVE_ST_RUN   0x00000001u

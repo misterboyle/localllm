@@ -13,10 +13,9 @@
 #define PROF_B 2u
 #define PROF_C 3u
 
-/* NOTE divergence (flagged for S6/S1 review): waveform.sv stores
- * holdtop_ms in a reg [7:0], so profile B's 1200 ms HOLD_TOP truncates to
- * 176 there — an RTL corner t_waveform never checks (no B dwell case).
- * This mirror follows the ARBITER (app note §3: hold_top 1200 ms). */
+/* Geometry arbiter resolved pre-S6 (S5 flag 2): app note §3 is the
+ * arbiter; waveform.sv now stores holdtop_ms in reg [10:0] (B's 1200 ms
+ * fit; t_waveform covers the B dwell), so this mirror and the RTL agree. */
 typedef struct { uint32_t up, dn, holdtop_ms; } profile_geo;
 
 static profile_geo geo_of(uint32_t pf)

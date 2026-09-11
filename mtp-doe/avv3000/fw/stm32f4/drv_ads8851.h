@@ -43,7 +43,8 @@ void ads8851_safety_gate(uint32_t gate);
 /* ---- AVA-QC staircase waveform API (§8.1, AN-8851-07 §3) ---- */
 
 /* profile: AN-8851-07 §3 (1=A Inspection, 2=B Flush, 3=C Prime);
- * hold_ms 1..255 (WAVE_CFG.HOLD_MS), step_lsb 1..63 (WAVE_CFG.STEP_LSB),
+ * hold_ms 1..16383 (WAVE_CFG.HOLD_MS — app-note defaults 500/800 fit),
+ * step_lsb 1..63 (WAVE_CFG.STEP_LSB),
  * invert: 0 = up/infusion, 1 = down/withdrawal (WAVE_CFG.INVERT).
  * Writes WAVE_CFG then sets CTRL.WF_EN (§8.1 requires ADC_EN too —
  * ads8851_init() must have run). Returns ADS8851_OK / ADS8851_ERR_ARG. */

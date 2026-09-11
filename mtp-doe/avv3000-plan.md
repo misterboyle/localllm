@@ -663,3 +663,67 @@ three docs must stop contradicting each other before seeding). Then S6
 (Michael: B-homing notes all in-code now, incl. this entry for the sim
 rung), S7 protocol, S8 dry run. Golden tree: `./score.sh` = 100 is the
 regression to re-verify after any payload/RTL touch.
+
+## Progress log — 2026-09-10 (Liet, pre-S6 flags session)
+
+**Goal: land the S5 "FLAGS for S1/S6 (do not lose)" list — all three
+payload/RTL flags resolved plus the S3 §7.2 step-8 review. Golden
+`./score.sh` = 100/100 (7 rungs, ladder exec 3.0 s; budget < 90 s).**
+
+### FLAG 1 resolved — WAVE_CFG.HOLD_MS widened to [15:2] (1..16383 ms)
+- Arbiter (Michael, this session): WIDEN the field — the app note drives,
+  the register follows. App-note §3 defaults (A 500 / B 800 ms) are now
+  writable; §4 tolerance math untouched. Rolfed STEP_LSB→[21:16],
+  INVERT→[22], rsvd→[31:23]; 14 bits also keeps hold×CLKS_PER_MS inside
+  the 28-bit tick_cnt (16383×10000 < 2^28).
+- Surfaces: §6.13 table, ES-2.1.2 field ref, ads8851_defs.h masks,
+  ads8851_ctrl.sv slices, waveform.sv (ports + hold_lat 14-bit),
+  drv wave_start/wave_set_hold ranges, drv_ads8851.h contract, t_waveform
+  encodings, hlink WAVE_RECIPE contract (hold becomes u16 LE — the old
+  1-byte hold was ALREADY inconsistent with the app-note defaults;
+  t_hlink never pinned it), model_waveform follows via defs.h masks.
+- fv_staircase keeps profile A at 250 ms — now an explicit short-hold
+  choice (r_sim wall budget; §4 tolerances are hold-RELATIVE), no longer
+  a workaround. S1 expansion: nothing to reconcile, just keep citing §6.13.
+
+### FLAG 2 resolved — waveform.sv top-dwell truncation fixed + covered
+- `reg [7:0] holdtop_ms` → `reg [10:0]`: profile B's HOLD_TOP=1200 fits
+  (11-bit width bounds holdtop×CLKS_PER_MS inside tick_cnt; an 8-bit
+  store truncates to 176 — documented in the reg comment for agents).
+  model_waveform divergence retired (mirror == RTL again, comment says so).
+- t_waveform gained the profile-B case: deterministic stop/restart pair
+  (PROFILE=0 freezes wave_q; restart arms a fresh HOLD — no
+  ES-2.1.2-deferral state inherited, no ramp/write race), 8-step ramp +
+  HOLD_TOP dwell via coarse 20K-cycle polling. Lower dwell bound catches
+  any width truncation (incl. 176), upper bound catches never-release.
+  **15 checks now; liveness pinned:** reintroducing the width bug fails
+  deterministically (line 186), clean-rebuild golden passes.
+- S6 note: "holdtop-width truncation" is a *seedable r_rtl candidate* now
+  that the catch exists — Michael's call in the variant map (BUGS.md).
+- Tooling: t_waveform VCD is runtime-OFF by default (B dwell simulates
+  ~13M cycles; default-cadence trace would be hundreds of MB) —
+  `t_waveform --vcd` for debug rounds. Harness lesson (new
+  "harness can be the bug" member): width-liveness re-runs need
+  `make clean` — a same-second incremental rebuild surfaced a stale
+  binary that briefly faked a golden failure.
+
+### FLAG 3 resolved — §8.2/§6.11/§6.10 latch wording
+Datasheet now states the observed geometry (RTL pre-increment wire +
+model + fv_occl pin): alarm latches at the CLOSE of the first window
+after OCCL_DEB+1 consecutive OCCL_DET windows (DEB=2 → latches on the
+4th close), releases via ALARM_CLR only, re-arm restarts debounce at
+zero. §6.10 DEB gloss and §6.11 ALARM_OCCL row reworded to match.
+
+### Reviewed — §7.2 step-8 amendment (feyd's "review before S6")
+Accepted: DRDY==0-only expectation (BUSY post-enable unsatisfiable per
+§7.1 geometry); feyd's own addendum (test_init_rejects_warm_restart,
+suite 13) closed the audit hole. No further payload change.
+
+### Next (pre-S6 remainder)
+S1 datasheet expansion to the 50–60K token gate — the three docs are
+consistent now, so expansion is additive (no contradiction-carrying
+left). Payload consistency gate (word-count + cross-ref grep under
+tests/) NOT yet built — make it part of the S1 acceptance tooling.
+Then S6 seed (Michael — BUGS.md candidate: holdtop-width variant),
+S7 protocol (+ fixture README lessons: mask-equals-bit, margin sanity,
+B-dwell coarse polling, clean-rebuild liveness), S8 dry run.

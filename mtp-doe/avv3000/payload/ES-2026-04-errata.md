@@ -37,7 +37,7 @@ configuration-ordering matter.
 
 **Silicon behavior:** While the waveform engine is running
 (`WAVE_STATUS.RUN=1`), a write to `WAVE_CFG` that changes only the `HOLD_MS`
-field [9:2] is accepted (W returns OKAY) but does **not** take effect until
+field [15:2] is accepted (W returns OKAY) but does **not** take effect until
 the current profile cycle completes. All other WAVE_CFG fields (PROFILE,
 STEP_LSB, INVERT) apply immediately.
 
