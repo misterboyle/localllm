@@ -727,3 +727,19 @@ tests/) NOT yet built — make it part of the S1 acceptance tooling.
 Then S6 seed (Michael — BUGS.md candidate: holdtop-width variant),
 S7 protocol (+ fixture README lessons: mask-equals-bit, margin sanity,
 B-dwell coarse polling, clean-rebuild liveness), S8 dry run.
+
+### Addendum (Liet, same session — Michael challenged the 250 ms test hold)
+- Supersedes "fv_staircase keeps profile A at 250 ms — now an explicit
+  short-hold choice" above: fv_staircase profile A now runs the app-note §3
+  DEFAULT 500 ms (wave_start(1,500,12); run window 7601->15201 ms = the
+  same 1.5-cycle structure, hold-scaled; the single in-window DONE pulse
+  lands at ms 10000 with the same 2 ms-window phase as before). Plateau
+  accuracy only got margin (6.25 tau -> 12.5 tau settle). Measured cost:
+  fv binary 0.45 s, ladder stays 100/100 — the "r_sim wall budget"
+  rationale in the entry above was never measured and is dead with data.
+- Durable fixture rule (extends the S4 domain rule, for S6/S7 README):
+  where a payload § states a value, the CONFORMANCE/trace test runs that
+  value — a test inventing its own "legal" config makes the test a second
+  source of truth. Fast-cadence choices belong in engine benches
+  (t_waveform HOLD_MS=1 — tests geometry, not the profile spec), and must
+  say so.

@@ -21,11 +21,12 @@
  * step p. The plant is seeded (sim/plant.c PLANT_NOISE_SEED): hermetic.
  *
  * Hold choice (S1 flag 1 RESOLVED pre-S6: §6.13 HOLD_MS widened to [15:2],
- * 1..16383 ms — the app note §3 defaults A 500 / B 800 are writable now).
- * Profile A still runs at 250 ms on purpose: §4 tolerances are
- * hold-RELATIVE ("2 x hold"), so the checks transfer at any legal hold and
- * the short hold keeps r_sim inside the ladder wall-time budget. Profile C
- * runs its app-note defaults (200 ms / 4 LSB) exactly.
+ * 1..16383 ms): this trace test runs the app note §3 defaults AS WRITTEN —
+ * profile A at 500 ms / 12 LSB, profile C at 200 ms / 4 LSB (profile B is
+ * r_rtl/t_waveform's case, incl. its 1200 ms HOLD_TOP dwell). Fixture
+ * rule: where a payload § gives a value, the conformance test uses it —
+ * the pre-widening 250 ms stand-in would have made the spec and the test
+ * two sources of truth.
  */
 #include <stdlib.h>
 
@@ -166,8 +167,12 @@ static void run_staircase(const spec_t *spec, int (*sp_fn)(int),
     *plateaus_out = plateaus;
 }
 
-/* Profile A (inspection) in closed loop: 1.5 cycles of the app-note
- * staircase with sensor noise ON (seeded), §4 tolerance set. */
+/* Profile A (inspection) in closed loop AT ITS APP-NOTE DEFAULTS (500 ms
+ * hold): 1.5 cycles of the staircase with sensor noise ON (seeded),
+ * §4 tolerance set. Run window = 1.5 x (20 plateaus x 500 ms) + ε; the
+ * single in-window DONE pulse lands at ms 10000 (structurally sampled —
+ * 20 x hold is a whole number of 2 ms windows, same phase as the old
+ * 250 ms schedule). */
 static void test_fv_staircase_profile_a(void)
 {
     spec_t spec;
@@ -177,17 +182,17 @@ static void test_fv_staircase_profile_a(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(ADS8851_OK, ads8851_init(), "init");
     plant_set_noise(1);               /* seeded — hermetic (plan §5) */
 
-    spec.hold = 250;                  /* largest legal hold, see header */
+    spec.hold = 500;                  /* app-note §3 default (AN-8851-07) */
     spec.tol_plateau = 4;             /* 6 % of 12 LSB x gain 6 = 4.32 */
     spec.over = 7;                    /* 10 % of 72 = 7.2 */
     spec.peak_max = 960;              /* OCCL_TH 0xF x 64 (reset ALARM_CFG) */
 
-    TEST_ASSERT_EQUAL_INT(ADS8851_OK, ads8851_wave_start(1u, 250u, 12u, 0));
+    TEST_ASSERT_EQUAL_INT(ADS8851_OK, ads8851_wave_start(1u, 500u, 12u, 0));
     sim_run_ms(1);        /* engine arms on the first engine clock (§6.15;
                            * waveform.sv ST_IDLE arm samples EN at the edge) */
     TEST_ASSERT_TRUE(ads8851_wave_status() & ADS8851_WAVE_ST_RUN);
 
-    run_staircase(&spec, a_sp, 7601, &done_seen, &plateaus);
+    run_staircase(&spec, a_sp, 15201, &done_seen, &plateaus);
 
     TEST_ASSERT_TRUE_MESSAGE(plateaus >= 20,
                              "fewer than one full cycle of plateaus checked");
