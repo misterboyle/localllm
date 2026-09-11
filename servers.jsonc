@@ -161,16 +161,23 @@
       "model": "~/.cache/huggingface/hub/models--unsloth--GLM-5.3-Flash-GGUF/snapshots/621d456e93e926e4b52f85cff5f634358c1828f9/UD-IQ3_XXS/GLM-5.3-Flash-UD-IQ3_XXS-00001-of-00004.gguf",
       "port": 30086,
       "args": [
-        // Fitter picks n_gpu_layers + ctx from free memory. It's ON by
-        // default in this build, listed explicitly anyway. NOTE: -fitp
-        // (--fit-print) does not exist in llama-server (only in the
-        // llama-fit-params tool) — fit's choices log at DEBUG: add
-        // "-lv","4" when diagnosing. Also NOTE: the fitter only counts
-        // THIS process's Metal budget — never start glm53 while another
-        // big model (flash-next*/mtp-vision) holds memory.
-        // Placeholder sizing until probe-glm53.sh reports the real
-        // Metal ceiling — update args with the verified max working ctx.
-        "-fit", "on",
+        // CANDIDATE config pending probe-glm53.sh r2 confirmation. r1 lesson:
+        // --fit on MIS-ESTIMATES this arch (glm5next PR branch): estimated
+        // 108.2G used but needed 114.1G vs the 110.1G MTL0 budget -> decode
+        // OOM. So: fit OFF, all layers on GPU EXCEPT the first N layers' MoE
+        // experts (--n-cpu-moe, ~2.4G/layer moved to pageable CPU RAM),
+        // single slot, 1 checkpoint/slot, 1G prompt cache (defaults: 32/8G).
+        // NOTE: -fitp (--fit-print) does not exist in llama-server (only in
+        // the llama-fit-params tool). Never start glm53 while another big
+        // model (flash-next*/mtp-vision) holds memory. On r2 PASS, pin the
+        // verified ncmoe/ctx pair here.
+        "--fit", "off",
+        "-ngl", "99",
+        "--n-cpu-moe", "6",
+        "-np", "1",
+        "--ctx-checkpoints", "1",
+        "--cache-ram", "1024",
+        "-c", "32768",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--chat-template-kwargs", "{\"reasoning_effort\":\"max\"}"
