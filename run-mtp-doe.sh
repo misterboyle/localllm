@@ -68,13 +68,13 @@ stop_arm() {
 }
 
 session() {  # wd title outfile timeout prompt  -> exits with opencode rc (124=timeout)
-  # NOTE: -m must be explicit — `opencode run` splits provider/model on the FIRST
-  # slash, so the configured default model (ID is an absolute path) arrives
-  # mangled (ProviderModelNotFoundError). "llama-flash/" + path works.
+  # NOTE: -m pinned explicitly (headless default agent is a persona, not a
+  # model choice). Friendly IDs since 2026-09-17 — llama.cpp servers ignore
+  # the requested model name, so provider/friendly-id is canonical.
   python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
 import subprocess, sys
 wd, title, out, tout, prompt = sys.argv[1:6]
-model = "llama-flash/" + "/Users/michael/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/c8b5954a88c2775c546b92593eda40ea041d3176/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
+model = "llama-flash/qwen3.8-flash-next"
 try:
     p = subprocess.run(["opencode", "run", "-m", model, "--dir", wd, "--auto", "--print-logs",
                         "--title", title, prompt],
