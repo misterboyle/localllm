@@ -126,7 +126,12 @@
         // NB: absolute path — serve does NOT expand ~ inside args (bin/model yes)
         "-md", "/Users/michael/localllm/mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
         "--spec-type", "draft-mtp",
-        "--spec-draft-n-max", "3",
+        // PRODUCTION A/B (2026-09-17): collecting real-episode data at n2.
+        // n3 baselines SAFE: flash-next-mtp-nmax3-base-2026-09-16.log (24.2 t/s),
+        // jgb-log-nmax3.log (25.1 t/s, 122h); 09-10 first-half = n2 production
+        // (26.6, confounded day) — see episode_stats.py. BEFORE any restart that
+        // rotates logs: mv flash-next-mtp.log flash-next-mtp-nmax2-<date>.log
+        "--spec-draft-n-max", "2",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
