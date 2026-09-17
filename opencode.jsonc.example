@@ -23,8 +23,9 @@
         "apiKey": "sk-local"
       },
       "models": {
-        // Key must be full local path — MLX server re-resolves from request
-        "$HOME/.localllm/models/Qwen3.6-27B-UD-MLX-4bit": {
+        // Key must be full local path — MLX server re-resolves from request.
+        // Absolute path, NOT $HOME/... — opencode does not expand it.
+        "/Users/michael/.localllm/models/Qwen3.6-27B-UD-MLX-4bit": {
           "name": "Qwen3.6-27B-UD-MLX-4bit",
           "maxTokens": 262144,
           "limit": {
@@ -42,8 +43,9 @@
         "apiKey": "sk-local"
       },
       "models": {
-        // Key must be full local path — MLX server re-resolves from request
-        "$HOME/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit": {
+        // Key must be full local path — MLX server re-resolves from request.
+        // Absolute path, NOT $HOME/... — opencode does not expand it.
+        "/Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit": {
           "name": "Qwen3.6-35B-A3B-UD-MLX-4bit",
           "maxTokens": 262144,
           "limit": {
@@ -55,8 +57,11 @@
     }
   },
 
-  // Default model — change to any provider/model combo above
-  "model": "mlx-moe/qwen3.6-35b-a3b",
+  // Default model — change to any provider/model combo above.
+  // Model IDs here are full paths starting with "/", so the separator makes
+  // TWO slashes (provider//path) — exactly like the live config. THREE is a
+  // bug: TUI tolerates it, `opencode run` dies with ProviderModelNotFoundError.
+  "model": "mlx-moe//Users/michael/.localllm/models/Qwen3.6-35B-A3B-UD-MLX-4bit",
 
   // Unsloth Qwen3.6 thinking mode (general): temp=1.0, top_p=0.95
   // Coding mode uses temp=0.6 (can be overridden per-agent if needed)
