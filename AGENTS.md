@@ -26,8 +26,10 @@ Code conventions for shell scripts, Python, and configuration files.
   with MTP spec decode) — the opencode assistant runs on it. There is no
   `restart` subcommand: restarting = `./serve stop mtp-vision && ./serve start mtp-vision`,
   and it kills the active opencode session. Do it at session end.
-- All other servers (dense/moe llama.cpp; mlx-* MLX layer) are parked. The
-  MLX layer migrates to Qwen3.8 only if its use resumes.
+- All other servers (dense/moe llama.cpp; the mlx-lm-turbo fork's `mlx-*` entries) are
+  parked. The active MLX engine is **mlx-serve**: `mlx-flash` on :30085 has been the
+  daily driver since 2026-09-17 (Qwen3.8-Flash-Next mixed-4-8bit, 512K ctx, 8-bit KV,
+  MTP — see `servers.jsonc`; opencode provider `mlx-flash/qwen3.8-flash-next-mlx`).
 
 ## Shell Scripts
 

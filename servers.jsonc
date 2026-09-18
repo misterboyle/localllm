@@ -188,6 +188,37 @@
         "--chat-template-kwargs", "{\"reasoning_effort\":\"max\"}"
       ]
     },
+    // MLX FLASH-NEXT — DAILY DRIVER (2026-09-17). Engine: mlx-serve (ddalcu,
+    // brew, Zig binary) — NOT the mlx-lm-turbo fork (mlx-* entries below).
+    // Model: Qwen3.8-Flash-Next mixed-4-8bit, 100GB on disk = 70.13GB weights +
+    // 32GB ngram PLE (serial-mmap warm, never wired — the "100GB" never bites).
+    // 512K ctx (YaRN factor 2.0 over native 262K): full 1M fills OOM at ~105.6GB
+    // active (physical RAM wall even with iogpu.wired_limit_mb=120000, kIOGPU
+    // error; measured 2026-09-17). Measured: prefill ~990-1030 t/s, decode
+    // ~47-50 small ctx / 20.6 @687K. Sampling = Qwen thinking defaults; MTP
+    // forced via --mtp (MoE target needs the flag). KV 8-bit, SSD prefix tier.
+    // Mutually exclusive with llama entries on :30085 (serve collision guard).
+    // opencode provider "mlx-flash/qwen3.8-flash-next-mlx" + jgb-bot MODEL point
+    // here. Rollback to llama: ./serve stop mlx-flash && ./serve start flash-next-mtp.
+    "mlx-flash": {
+      "backend": "mlxserve",
+      "model": "~/.localllm/models/Qwen3.8-Flash-Next-MLX-Serve-mixed-4-8bit",
+      "port": 30085,
+      "args": [
+        // HTTP mode is NOT mlx-serve's default (interactive chat is) — explicit.
+        "--serve",
+        "--ctx-size", "524288",
+        "--kv-quant", "8",
+        "--mtp",
+        "--metrics",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prefix-cache-disk", "10GB",
+        // YaRN long-context override (native max_position_embeddings is 262144).
+        "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
+      ]
+    },
     "mlx-dense": {
       "backend": "mlx",
       "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit",

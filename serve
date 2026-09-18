@@ -99,6 +99,24 @@ MLX_TURBO_VENV="${HOME}/mlx-lm-turbo/venv"
 # OptIQ venv — used for optiq serve backends (with MTP support)
 OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
+# mlx-serve (ddalcu/mlx-serve, Zig engine) — brew install, NOT the mlx-lm-turbo
+# fork; different CLI (see servers.jsonc "mlx-flash" entry).
+MLXSERVE_BIN="/opt/homebrew/bin/mlx-serve"
+
+# Build mlx-serve command line
+build_mlxserve_cmd() {
+  local name="$1"
+  local model port args
+
+  model=$(expand_path "$(server_field "$name" model)")
+  port=$(server_field "$name" port)
+  args=$(server_args "$name")
+
+  # --host pinned loopback on purpose: mlx-serve defaults to 0.0.0.0 (LAN open)
+  # and this box has a standing rule against exposing servers (2026-09-13).
+  echo "$MLXSERVE_BIN --model '$model' --port $port --host 127.0.0.1 $args"
+}
+
 # Build mlx command line
 build_mlx_cmd() {
   local name="$1"
@@ -174,6 +192,8 @@ do_start() {
       cmd=$(build_mlx_cmd "$name")
     elif [ "$backend" = "optiq" ]; then
       cmd=$(build_optiq_cmd "$name")
+    elif [ "$backend" = "mlxserve" ]; then
+      cmd=$(build_mlxserve_cmd "$name")
     else
       cmd=$(build_llamacpp_cmd "$name")
     fi
@@ -192,17 +212,25 @@ do_start() {
   done
 
   echo ""
-  echo "Waiting for servers to be ready..."
+  echo "Waiting for servers to be ready (polling /health, up to ~60s)..."
   sleep 3
 
+  # Poll instead of the old single probe: 100 GB-class loads (llama.cpp AND
+  # mlx-serve) routinely outlast a fixed 3s wait and false-alarmed ✗ on a
+  # healthy boot. Now: first check after 3s, then every 5s up to ~60s.
   for name in "${targets[@]}"; do
-    local port
+    local port tries
     port=$(server_field "$name" port)
-    if curl -sf "http://localhost:$port/health" > /dev/null 2>&1; then
-      echo "  ✓ $name (localhost:$port)"
-    else
-      echo "  ✗ $name (localhost:$port) — check $LOG_DIR/${name}.log"
-    fi
+    tries=0
+    while ! curl -sf "http://localhost:$port/health" > /dev/null 2>&1; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 12 ]; then
+        echo "  ✗ $name (localhost:$port) — not healthy after ~60s; check $LOG_DIR/${name}.log"
+        continue 2
+      fi
+      sleep 5
+    done
+    echo "  ✓ $name (localhost:$port)"
   done
 }
 
@@ -296,6 +324,7 @@ case "${1:-help}" in
   cmd)     name="${2:?usage: serve cmd <server>}"; backend=$(server_field "$name" backend)
            if [ "$backend" = "mlx" ]; then build_mlx_cmd "$name"
            elif [ "$backend" = "optiq" ]; then build_optiq_cmd "$name"
+           elif [ "$backend" = "mlxserve" ]; then build_mlxserve_cmd "$name"
            else build_llamacpp_cmd "$name"; fi; echo ;;
   *)       echo "Usage: $0 {start|stop|status|cmd} [server1] [server2] ..."
            echo ""
