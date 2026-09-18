@@ -164,7 +164,11 @@ Sampling defaults are aligned with [Unsloth Qwen3.8 recommendations](https://uns
 **Config locations:**
 - All servers: `servers.jsonc` → per-server `args` (llama.cpp flags like
   `--temp`, `--top-p`, `--top-k`, `--min-p`; MLX flags like `--temp`, `--top-p`, `--top-k`)
-- Opencode: currently sets no sampling params — server defaults apply
+- Opencode: sets no sampling params — server defaults apply. EXCEPT thinking:
+  `reasoning_effort` is sent per-request for mlx-flash via model option
+  `reasoningEffort: "xhigh"` in `~/.config/opencode/opencode.jsonc` (mlx-serve has no
+  server-side effort flag and ignores `chat_template_kwargs`; the top-level body field
+  is its only lever — verified 2026-09-18)
 
 **Notes:**
 - Qwen3.8 is a hybrid thinking model: thinking is ON by default with `reasoning_effort=xhigh`.
