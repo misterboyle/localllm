@@ -99,9 +99,11 @@ MLX_TURBO_VENV="${HOME}/mlx-lm-turbo/venv"
 # OptIQ venv — used for optiq serve backends (with MTP support)
 OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
-# mlx-serve (ddalcu/mlx-serve, Zig engine) — brew install, NOT the mlx-lm-turbo
-# fork; different CLI (see servers.jsonc "mlx-flash" entry).
-MLXSERVE_BIN="/opt/homebrew/bin/mlx-serve"
+# mlx-serve (ddalcu/mlx-serve, Zig engine) — NOT the mlx-lm-turbo fork;
+# different CLI (see servers.jsonc "mlx-flash" entry).
+# 26.9.5 installed versioned (brew tap formula still pins 26.9.2, 2026-09-23).
+# Rollback: point back at /opt/homebrew/bin/mlx-serve.
+MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.9.5/mlx-serve"
 
 # Build mlx-serve command line
 build_mlxserve_cmd() {
