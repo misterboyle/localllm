@@ -101,9 +101,11 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
 # mlx-serve (ddalcu/mlx-serve, Zig engine) — NOT the mlx-lm-turbo fork;
 # different CLI (see servers.jsonc "mlx-flash" entry).
-# 26.9.5 installed versioned (brew tap formula still pins 26.9.2, 2026-09-23).
-# Rollback: point back at /opt/homebrew/bin/mlx-serve.
-MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.9.5/mlx-serve"
+# 26.10.1 installed versioned 2026-10-04 (first release containing the #573
+# SSD prefix-cache accounting fix; 26.9.5/6 under-billed extended entries).
+# Rollback: point MLXSERVE_BIN back at ~/.localllm/mlx-serve-26.9.5/mlx-serve.
+# The brew tap formula is older still (26.9.2) — not a rollback target.
+MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.10.1/mlx-serve"
 
 # Build mlx-serve command line
 build_mlxserve_cmd() {

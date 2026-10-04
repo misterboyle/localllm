@@ -214,7 +214,10 @@
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
-        "--prefix-cache-disk", "10GB",
+        // Sized to the measured working set (~48 prefixes/day, 1.22 GB/entry):
+        // 200 GB ≈ 2.5 days. 10 GB held ~8 entries and thrashed; the cap is the
+        // eviction control, so keep it well under free space (min 64 GiB reserve).
+        "--prefix-cache-disk", "200GB",
         // YaRN long-context override (native max_position_embeddings is 262144).
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
       ]
