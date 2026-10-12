@@ -222,6 +222,33 @@
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
       ]
     },
+    // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on sushi 1.2.2 — a
+    // detached mlx-serve fork (beamivalice/sushi, brew tap beamivalice/tap) whose
+    // GLM/MiMo packs only load in sushi, never in stock mlx-serve. Distinct port so
+    // the collision guard refuses to run it beside mlx-flash: the exclusion is by
+    // MEMORY (GLM 2.4bpw wants ~96.5 GiB at 512K ctx per Sushi's table, flash-next
+    // holds ~83 GiB wired — the sum is over physical), not by ports.
+    // ctx 524288 stays inside the AUTO gpu pool (110,100 MiB); Sushi's documented
+    // 1M for this pack assumes `sudo sysctl iogpu.wired_limit_mb=120000` (resets at
+    // reboot). GLM native ctx is 1M — no YaRN override. Drafting = the pack's
+    // DFlash2 assistant (auto-loaded; --mtp is explicitly off per sushi's docs:
+    // "GLM's stays off"). opencode provider "sushi-glm".
+    "glm-sushi": {
+      "backend": "sushi",
+      "model": "~/.sushi/models/beamster/GLM-5.3-Flash-Sushi-2.4bpw",
+      "port": 30087,
+      "args": [
+        "--serve",
+        "--ctx-size", "524288",
+        "--kv-quant", "8",
+        "--no-mtp",
+        "--metrics",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prefix-cache-disk", "20GB"
+      ]
+    },
     "mlx-dense": {
       "backend": "mlx",
       "model": "~/.localllm/models/Qwen3.6-27B-UD-MLX-4bit",

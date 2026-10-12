@@ -107,6 +107,11 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 # The brew tap formula is older still (26.9.2) — not a rollback target.
 MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.10.1/mlx-serve"
 
+# sushi (beamivalice/sushi, brew install beamivalice/tap/sushi) — the only engine
+# that loads Sushi EXL3 packs (GLM-5.3-Flash 2.4bpw). /opt/homebrew/bin so the
+# brew-managed binary upgrades itself without moving this launcher's target.
+SUSHI_BIN="${SUSHI_BIN:-/opt/homebrew/bin/sushi}"
+
 # Build mlx-serve command line
 build_mlxserve_cmd() {
   local name="$1"
@@ -119,6 +124,20 @@ build_mlxserve_cmd() {
   # --host pinned loopback on purpose: mlx-serve defaults to 0.0.0.0 (LAN open)
   # and this box has a standing rule against exposing servers (2026-09-13).
   echo "$MLXSERVE_BIN --model '$model' --port $port --host 127.0.0.1 $args"
+}
+
+# Build sushi command line (beamivalice/sushi — detached mlx-serve fork, same CLI
+# shape; its GLM/MiMo EXL3 packs do not load in stock mlx-serve). Loopback pinned
+# for the same 2026-09-13 rule as above.
+build_sushi_cmd() {
+  local name="$1"
+  local model port args
+
+  model=$(expand_path "$(server_field "$name" model)")
+  port=$(server_field "$name" port)
+  args=$(server_args "$name")
+
+  echo "$SUSHI_BIN --model '$model' --port $port --host 127.0.0.1 $args"
 }
 
 # Build mlx command line
@@ -198,6 +217,8 @@ do_start() {
       cmd=$(build_optiq_cmd "$name")
     elif [ "$backend" = "mlxserve" ]; then
       cmd=$(build_mlxserve_cmd "$name")
+    elif [ "$backend" = "sushi" ]; then
+      cmd=$(build_sushi_cmd "$name")
     else
       cmd=$(build_llamacpp_cmd "$name")
     fi
@@ -329,6 +350,7 @@ case "${1:-help}" in
            if [ "$backend" = "mlx" ]; then build_mlx_cmd "$name"
            elif [ "$backend" = "optiq" ]; then build_optiq_cmd "$name"
            elif [ "$backend" = "mlxserve" ]; then build_mlxserve_cmd "$name"
+           elif [ "$backend" = "sushi" ]; then build_sushi_cmd "$name"
            else build_llamacpp_cmd "$name"; fi; echo ;;
   *)       echo "Usage: $0 {start|stop|status|cmd} [server1] [server2] ..."
            echo ""
