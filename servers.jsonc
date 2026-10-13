@@ -222,19 +222,25 @@
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
       ]
     },
-    // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on sushi 1.2.2 — a
-    // detached mlx-serve fork (beamivalice/sushi, brew tap beamivalice/tap) whose
-    // GLM/MiMo packs only load in sushi, never in stock mlx-serve. Distinct port so
-    // the collision guard refuses to run it beside mlx-flash: the exclusion is by
-    // MEMORY (GLM 2.4bpw wants ~96.5 GiB at 512K ctx per Sushi's table, flash-next
-    // holds ~83 GiB wired — the sum is over physical), not by ports.
+    // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on STOCK
+    // mlx-serve 26.10.2 (2026-10-12 release: "Sushi's GLM-5.3, MiMo and BF16
+    // Flash Next packs load as they are", GLM-5.3 vision, DFlash2 drafting, and
+    // image conversations capture+restore on the SSD tier). Previously ran on
+    // the beamivalice/sushi fork (now installed but no longer the loader);
+    // ROLLBACK = flip `backend` back to "sushi" and ./serve restart. Distinct
+    // port so the collision guard refuses to run it beside mlx-flash: the
+    // exclusion is by MEMORY (GLM 2.4bpw wants ~96.5 GiB at 512K ctx per
+    // Sushi's table, flash-next holds ~83 GiB wired — the sum is over
+    // physical), not by ports.
     // ctx 524288 stays inside the AUTO gpu pool (110,100 MiB); Sushi's documented
     // 1M for this pack assumes `sudo sysctl iogpu.wired_limit_mb=120000` (resets at
     // reboot). GLM native ctx is 1M — no YaRN override. Drafting = the pack's
-    // DFlash2 assistant (auto-loaded; --mtp is explicitly off per sushi's docs:
-    // "GLM's stays off"). opencode provider "sushi-glm".
+    // DFlash2 assistant, auto-detected (drafter priority MTP > dflash > drafter;
+    // --no-mtp only kills the native MTP head — GLM has none, DFlash2 stays on;
+    // --no-drafter / --no-vision are the opt-outs, neither passed). opencode
+    // provider "sushi-glm" (name kept — the pack is still the Sushi pack).
     "glm-sushi": {
-      "backend": "sushi",
+      "backend": "mlxserve",
       "model": "~/.sushi/models/beamster/GLM-5.3-Flash-Sushi-2.4bpw",
       "port": 30087,
       "args": [
@@ -242,11 +248,24 @@
         "--ctx-size", "524288",
         "--kv-quant", "8",
         "--no-mtp",
+        // Admission refused prefill with the DEFAULT --os-reserve-gib (8, the
+        // 2-8 clamp of 128/8): needed=14022MB available=7733MB on a dedicated
+        // single-model box. 0 = no OS reserve: 15.7GB available ≥ 14.0GB
+        // needed (prefill width already at the model's auto-cap 512; resident
+        // 91.7 GiB + working ~13 GiB still inside the 107.5 GiB pool).
+        "--os-reserve-gib", "0",
+        // DFlash2 is NOT auto-discovered here: stock mlx-serve only auto-loads a
+        // checkpoint-shipped drafter from a subdir named drafter/ — the Sushi
+        // pack ships dflash2/ (its fork auto-detects that; stock does not), so
+        // without this flag we silently fall back to PLD (measured: "PLD
+        // speculative decoding: ENABLED"). sushi's own log line was
+        // "[dflash] auto-detected assistant: …/dflash2" — the fork knew.
+        "--drafter", "/Users/michael/.sushi/models/beamster/GLM-5.3-Flash-Sushi-2.4bpw/dflash2",
         "--metrics",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
-        "--prefix-cache-disk", "20GB"
+        "--prefix-cache-disk", "200GB"
       ]
     },
     "mlx-dense": {

@@ -101,11 +101,14 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
 # mlx-serve (ddalcu/mlx-serve, Zig engine) — NOT the mlx-lm-turbo fork;
 # different CLI (see servers.jsonc "mlx-flash" entry).
-# 26.10.1 installed versioned 2026-10-04 (first release containing the #573
-# SSD prefix-cache accounting fix; 26.9.5/6 under-billed extended entries).
-# Rollback: point MLXSERVE_BIN back at ~/.localllm/mlx-serve-26.9.5/mlx-serve.
+# 26.10.2 installed versioned 2026-10-12 (first release with Sushi GLM-5.3/
+# MiMo/BF16 Flash Next EXL3 packs, GLM-5.3 vision, image conversations on the
+# SSD tier, and DFlash2 drafting for GLM-5.3 — the glm-sushi entry now runs on
+# this binary, not the sushi fork). 26.10.1 was the #573 SSD prefix-cache
+# accounting fix. Rollback: point MLXSERVE_BIN back at
+# ~/.localllm/mlx-serve-26.10.1/mlx-serve (or 26.9.5).
 # The brew tap formula is older still (26.9.2) — not a rollback target.
-MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.10.1/mlx-serve"
+MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve"
 
 # sushi (beamivalice/sushi, brew install beamivalice/tap/sushi) — the only engine
 # that loads Sushi EXL3 packs (GLM-5.3-Flash 2.4bpw). /opt/homebrew/bin so the
