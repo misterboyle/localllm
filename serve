@@ -101,14 +101,28 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
 # mlx-serve (ddalcu/mlx-serve, Zig engine) — NOT the mlx-lm-turbo fork;
 # different CLI (see servers.jsonc "mlx-flash" entry).
-# 26.10.2 installed versioned 2026-10-12 (first release with Sushi GLM-5.3/
-# MiMo/BF16 Flash Next EXL3 packs, GLM-5.3 vision, image conversations on the
-# SSD tier, and DFlash2 drafting for GLM-5.3 — the glm-sushi entry now runs on
-# this binary, not the sushi fork). 26.10.1 was the #573 SSD prefix-cache
-# accounting fix. Rollback: point MLXSERVE_BIN back at
-# ~/.localllm/mlx-serve-26.10.1/mlx-serve (or 26.9.5).
+# 26.11.1 installed versioned 2026-11-03. Why it's worth the restart (survey on the
+# binaries, not the release notes: no flag removed, every flag servers.jsonc passes
+# present with identical defaults): --prefill-decode-share now DEFAULTS to 0.25, so a
+# decode stream keeps wall time while another request prefills (was 0 — the mechanism
+# behind our pool law's interference) and is now a per-entry flag instead of an env var;
+# a thinking budget no longer disables MTP for the answer phase; SSD prefix-tier
+# durability fixes ("every long session is saved, not just the newest", "the SSD cache
+# keeps what it just saved"); and --shutdown-persist-secs, which is why this launcher's
+# stop grace grew (see do_stop). Cost: MLX_SERVE_* tuning vars went 231 -> 26, so the
+# per-kernel opt-outs our logs name (MTP_ADAPTIVE, NGRAM_WARM, MOE_AFFINE4, SDPA_SPLIT,
+# all DFLASH_*) are gone — what they switched on is now unconditional, and the only
+# lever left for a bad kernel is swapping the binary below.
+# ROLLBACK: point MLXSERVE_BIN back at ~/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve
+# (kept on disk with 26.10.1 and 26.9.5). Known gap in BOTH: upstream #1046 — a GLM-5.3-Flash
+# turn without reasoning inherits the previous turn's, from a shared {% for %} scope. Fixed
+# on main (a86ce29b5, 2026-11-02) but 2 commits AHEAD of the v26.11.1 tag, so no release has
+# it yet; wait for the next patch rather than building from main. Qwen3.8-Flash-Next is
+# immune (its template re-initialises every loop-local name per iteration).
 # The brew tap formula is older still (26.9.2) — not a rollback target.
-MLXSERVE_BIN="${HOME}/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve"
+# Env-overridable (same pattern as SUSHI_BIN below) so a rollback is a one-liner with no
+# edit: MLXSERVE_BIN=~/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve ./serve start mlx-flash
+MLXSERVE_BIN="${MLXSERVE_BIN:-${HOME}/.localllm/mlx-serve-26.11.1/mlx-serve-macos-arm64/mlx-serve}"
 
 # sushi (beamivalice/sushi, brew install beamivalice/tap/sushi) — the only engine
 # that loads Sushi EXL3 packs (GLM-5.3-Flash 2.4bpw). /opt/homebrew/bin so the
@@ -291,10 +305,24 @@ do_stop() {
       continue
     fi
 
-    # SIGTERM first, give it 2 seconds to shut down cleanly
+    # Stop grace is backend-specific. mlx-serve-family servers answer SIGTERM by
+    # finishing the SSD prefix-cache slices that are not on disk yet, for up to
+    # --shutdown-persist-secs (45 by default); killing them at 2 s discards exactly the
+    # KV a boot would otherwise restore instead of re-prefilling. Everything else keeps
+    # the old 2 s. Override: MLXSERVE_STOP_GRACE=<secs>.
+    local grace=2 backend
+    backend=$(server_field "$name" backend)
+    case "$backend" in
+      mlxserve | sushi) grace="${MLXSERVE_STOP_GRACE:-50}" ;;
+    esac
+
+    # SIGTERM first, then wait out the grace window
     kill "$pid" 2>/dev/null
     local waited=0
-    while [ $waited -lt 2 ] && kill -0 "$pid" 2>/dev/null; do
+    if [ "$grace" -gt 2 ]; then
+      echo "  $name: SIGTERM, allowing ${grace}s to drain the SSD prefix tier..."
+    fi
+    while [ "$waited" -lt "$grace" ] && kill -0 "$pid" 2>/dev/null; do
       sleep 1
       waited=$((waited + 1))
     done

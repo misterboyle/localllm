@@ -188,8 +188,9 @@
         "--chat-template-kwargs", "{\"reasoning_effort\":\"max\"}"
       ]
     },
-    // MLX FLASH-NEXT — DAILY DRIVER (2026-09-17). Engine: mlx-serve (ddalcu,
-    // brew, Zig binary) — NOT the mlx-lm-turbo fork (mlx-* entries below).
+    // MLX FLASH-NEXT — DAILY DRIVER (2026-09-17). Engine: mlx-serve (ddalcu/mlx-serve,
+    // Zig binary; versioned install pinned at serve:MLXSERVE_BIN, NOT the brew tap and
+    // NOT the mlx-lm-turbo fork (mlx-* entries below)).
     // Model: Qwen3.8-Flash-Next mixed-4-8bit, 100GB on disk = 70.13GB weights +
     // 32GB ngram PLE (serial-mmap warm, never wired — the "100GB" never bites).
     // 512K ctx (YaRN factor 2.0 over native 262K): full 1M fills OOM at ~105.6GB
@@ -218,14 +219,21 @@
         // 200 GB ≈ 2.5 days. 10 GB held ~8 entries and thrashed; the cap is the
         // eviction control, so keep it well under free space (min 64 GiB reserve).
         "--prefix-cache-disk", "200GB",
+        // On SIGTERM, finish writing KV slices that are still only in RAM. ./serve
+        // gives mlxserve stops 50s for exactly this (serve do_stop); 0 disables.
+        "--shutdown-persist-secs", "45",
         // YaRN long-context override (native max_position_embeddings is 262144).
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
       ]
     },
     // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on STOCK
-    // mlx-serve 26.10.2 (2026-10-12 release: "Sushi's GLM-5.3, MiMo and BF16
-    // Flash Next packs load as they are", GLM-5.3 vision, DFlash2 drafting, and
-    // image conversations capture+restore on the SSD tier). Previously ran on
+    // mlx-serve (binary pinned in ./serve — 26.11.1 since 2026-11-03). 26.10.2 was
+    // the first release where "Sushi's GLM-5.3, MiMo and BF16 Flash Next packs load
+    // as they are" (GLM-5.3 vision, DFlash2 drafting, image conversations
+    // capture+restore on the SSD tier); 26.10.3 added "GLM-5.3 answers as it should
+    // when several chats share it or it drafts ahead". Still unreleased in either:
+    // upstream #1046, a GLM turn with no reasoning inheriting the previous turn's
+    // reasoning_content from a shared jinja {% for %} scope. Previously ran on
     // the beamivalice/sushi fork (now installed but no longer the loader);
     // ROLLBACK = flip `backend` back to "sushi" and ./serve restart. Distinct
     // port so the collision guard refuses to run it beside mlx-flash: the
@@ -261,11 +269,29 @@
         // speculative decoding: ENABLED"). sushi's own log line was
         // "[dflash] auto-detected assistant: …/dflash2" — the fork knew.
         "--drafter", "/Users/michael/.sushi/models/beamster/GLM-5.3-Flash-Sushi-2.4bpw/dflash2",
+        "--shutdown-persist-secs", "45",
         "--metrics",
         "--temp", "1.0",
         "--top-p", "0.95",
         "--top-k", "20",
         "--prefix-cache-disk", "200GB"
+      ]
+    },
+    "qwen27b-bf16-mtp": {
+      "backend": "mlxserve",
+      "model": "~/.localllm/models/Qwen3.8-27B-bf16-MTP-MLX",
+      "port": 30100,
+      "args": [
+        "--serve",
+        "--ctx-size", "262144",
+        "--kv-quant", "off",
+        "--mtp",
+        "--metrics",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--prefix-cache-disk", "200GB",
+        "--shutdown-persist-secs", "45"
       ]
     },
     "mlx-dense": {
