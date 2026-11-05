@@ -120,6 +120,7 @@ if [ "$ready" = "0" ]; then
   log "     nothing but warmth, every miss is handled as a cold prefill:"
   log '       mv ~/.mlx-serve/kv-cache ~/.mlx-serve/kv-cache.bak-<YYYYMMDD> && ./serve start '"$SERVER"
   log '  2. or go back to the engine that was serving:'
+  # shellcheck disable=SC2016  # $HOME is deliberate: this line is a suggestion to paste, not to expand
   log '       MLXSERVE_BIN=$HOME/.localllm/mlx-serve-26.11.1/mlx-serve-macos-arm64/mlx-serve ./serve start '"$SERVER"
   exit 1
 fi
