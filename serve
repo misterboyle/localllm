@@ -101,28 +101,39 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 
 # mlx-serve (ddalcu/mlx-serve, Zig engine) — NOT the mlx-lm-turbo fork;
 # different CLI (see servers.jsonc "mlx-flash" entry).
-# 26.11.1 installed versioned 2026-11-03. Why it's worth the restart (survey on the
-# binaries, not the release notes: no flag removed, every flag servers.jsonc passes
-# present with identical defaults): --prefill-decode-share now DEFAULTS to 0.25, so a
-# decode stream keeps wall time while another request prefills (was 0 — the mechanism
-# behind our pool law's interference) and is now a per-entry flag instead of an env var;
-# a thinking budget no longer disables MTP for the answer phase; SSD prefix-tier
-# durability fixes ("every long session is saved, not just the newest", "the SSD cache
-# keeps what it just saved"); and --shutdown-persist-secs, which is why this launcher's
-# stop grace grew (see do_stop). Cost: MLX_SERVE_* tuning vars went 231 -> 26, so the
-# per-kernel opt-outs our logs name (MTP_ADAPTIVE, NGRAM_WARM, MOE_AFFINE4, SDPA_SPLIT,
-# all DFLASH_*) are gone — what they switched on is now unconditional, and the only
-# lever left for a bad kernel is swapping the binary below.
-# ROLLBACK: point MLXSERVE_BIN back at ~/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve
-# (kept on disk with 26.10.1 and 26.9.5). Known gap in BOTH: upstream #1046 — a GLM-5.3-Flash
-# turn without reasoning inherits the previous turn's, from a shared {% for %} scope. Fixed
-# on main (a86ce29b5, 2026-11-02) but 2 commits AHEAD of the v26.11.1 tag, so no release has
-# it yet; wait for the next patch rather than building from main. Qwen3.8-Flash-Next is
-# immune (its template re-initialises every loop-local name per iteration).
-# The brew tap formula is older still (26.9.2) — not a rollback target.
-# Env-overridable (same pattern as SUSHI_BIN below) so a rollback is a one-liner with no
-# edit: MLXSERVE_BIN=~/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve ./serve start mlx-flash
-MLXSERVE_BIN="${MLXSERVE_BIN:-${HOME}/.localllm/mlx-serve-26.11.1/mlx-serve-macos-arm64/mlx-serve}"
+# ROLLED BACK to 26.10.2 on 2026-11-05 until the 26.11.1 memory leak ships a fix.
+# Upstream #1071 (open, filed 2026-11-03 — same model, same 128 GB box): ~21 GB of
+# active memory survives unload on v26.11.1. The leak is #1091: qwen4_exp runBatched
+# stacked each slot's last-row logits with concatRows and never freed the [N,1,V]
+# handle, so every batched plain token leaked N rows of logits "for as long as two or
+# more streams decoded together". It came in with #978 (623f93aa) and FIRST SHIPPED IN
+# v26.11.1 — which is exactly our discontinuity: 0 hard failures in 2,091 requests on
+# 26.10.x vs 30 in 1,964 on 26.11.1, and mlx_active_bytes 81.2 GB -> 102.9 GB here.
+# #1079 (positive repro rig) measures the idle floor ratcheting ~2 GiB/h of real agent
+# traffic to the arena ceiling in ~30 h, and the discriminator is the HOURLY MIN of
+# mlx_active_bytes over 24-48 h — not a pre/post-unload delta, because test duration
+# << accumulation time (three negative tests upstream are consistent with the bug).
+# #1091 is merged, but v26.11.1 (2026-11-01) is still the newest release, so no shipped
+# binary has it. Forward-test when v26.11.2+ lands:
+#   MLXSERVE_BIN=~/.localllm/mlx-serve-26.11.2/mlx-serve-macos-arm64/mlx-serve ./serve start mlx-flash
+# (build_mlxserve_cmd filters --shutdown-persist-secs for pre-26.11 binaries, so the
+# one-liner above and the rollback below actually boot — 26.10.2 has no such flag and
+# servers.jsonc passes one.)
+# What 26.11.1 bought, for the forward-test: --prefill-decode-share defaulting to 0.25
+# (a decode stream keeps wall time while another request prefills), a thinking budget
+# that no longer disables MTP for the answer phase, SSD prefix-tier durability fixes,
+# and --shutdown-persist-secs, which is why this launcher's stop grace grew (do_stop).
+# Cost: MLX_SERVE_* tuning vars went 231 -> 26, so the per-kernel opt-outs our logs
+# name (MTP_ADAPTIVE, NGRAM_WARM, MOE_AFFINE4, SDPA_SPLIT, all DFLASH_*) are gone —
+# what they switched on is unconditional, and the lever for a bad kernel is this pin.
+# ROLLBACK TARGETS on disk: 26.10.2 (live again), 26.10.1, 26.9.5. The brew tap formula
+# is older still (26.9.2) — not a target. Known gap in every version we have: upstream
+# #1046 — a GLM-5.3-Flash turn without reasoning inherits the previous turn's, from a
+# shared {% for %} scope; fixed on main (a86ce29b5, 2026-11-02) but 2 commits AHEAD of
+# the v26.11.1 tag, so wait for the next patch rather than building from main.
+# Qwen3.8-Flash-Next is immune (its template re-initialises every loop-local name).
+# Env-overridable (same pattern as SUSHI_BIN below) so a change is a one-liner, no edit.
+MLXSERVE_BIN="${MLXSERVE_BIN:-${HOME}/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve}"
 
 # sushi (beamivalice/sushi, brew install beamivalice/tap/sushi) — the only engine
 # that loads Sushi EXL3 packs (GLM-5.3-Flash 2.4bpw). /opt/homebrew/bin so the
@@ -132,11 +143,26 @@ SUSHI_BIN="${SUSHI_BIN:-/opt/homebrew/bin/sushi}"
 # Build mlx-serve command line
 build_mlxserve_cmd() {
   local name="$1"
-  local model port args
+  local model port args help
 
   model=$(expand_path "$(server_field "$name" model)")
   port=$(server_field "$name" port)
   args=$(server_args "$name")
+
+  # Flags servers.jsonc passes that only exist in newer engines. Pinning an older
+  # binary -- the 26.10.2 leak rollback, or any future one-liner -- must not die on an
+  # unknown flag, and dropping one silently is worse than saying so. Probe the resolved
+  # binary's own --help (no model load, ~0.1s) and report what comes out. Diagnostics
+  # go to stderr: this function's stdout IS the command line.
+  help=$("$MLXSERVE_BIN" --help 2>&1 || true)
+  if ! printf '%s' "$help" | grep -q -- '--shutdown-persist-secs'; then
+    case " $args " in
+      *" --shutdown-persist-secs "*)
+        echo "  note: $MLXSERVE_BIN predates --shutdown-persist-secs; dropping it (the SSD drain on SIGTERM is a 26.11 feature, so a stop here discards un-persisted KV slices)" >&2
+        args=$(printf '%s' "$args" | sed -E 's/--shutdown-persist-secs [^ ]+ ?//g')
+        ;;
+    esac
+  fi
 
   # --host pinned loopback on purpose: mlx-serve defaults to 0.0.0.0 (LAN open)
   # and this box has a standing rule against exposing servers (2026-09-13).

@@ -217,20 +217,18 @@
         "--serve",
         "--ctx-size", "524288",
         "--kv-quant", "8",
-        // THE ONE VARIABLE. 26.10.2 -> 26.11.1 moved this default 0 -> 0.25, and it
-        // is the only default that moved in the memory path (`--os-reserve-gib` and
-        // `--wired-margin-gib` read identically in both binaries). 26.10.x logged 0
-        // hard failures in 2,091 requests on this model; 26.11.1 logged 30 in 1,964.
-        // Set to 0 = "the old schedule" per its own help, i.e. a restore, not a
-        // tweak — so if refusals persist, the schedule is exonerated by experiment
-        // and the blame is elsewhere. NOT proven as the cause: 29 of the 30 failures
-        // were a lone session's warm replay (no concurrent decode in sight), per-
-        // session billed bytes are the same on both sides (20.85 vs 20.61 KB/token),
-        // and prompt depth went DOWN (median 200,473 -> 173,435). What did move is
-        // the unbilled floor: mlx_active_bytes 81.2 GB on 26.10.2 (saved seconds
-        // before the cutover) vs 102.9 GB now, same weights, same 32 GB n-gram table,
-        // same `[wired] mode=max limit=110100 MB`, with the whole prefix-cache budget
-        // only 10,848 MB of it. Read that at idle after this boot.
+        // Pin of intent, and a no-op on the 26.10.2 binary this entry now runs (its
+        // default is 0). It was 26.11.1's change to 0.25, which is when our refusals
+        // started — 0 hard failures in 2,091 requests on 26.10.x vs 30 in 1,964 on
+        // 26.11.1 — but the CAUSE is upstream, not the schedule: #1091, shipped first
+        // in v26.11.1, leaked N rows of stacked logits per batched decode token "for
+        // as long as two or more streams decoded together", and #1071 (same model, same
+        // 128 GB box) measured ~21 GB surviving unload. That is why two sessions going
+        // felt like the trigger — batched decode is the leak path — and why the floor
+        // rose while billed per-session bytes did not (20.85 vs 20.61 KB/token). #1091
+        // is merged but unreleased; forward-test when v26.11.2+ lands, and until then
+        // the discriminator is the hourly MIN of mlx_active_bytes over 24-48 h, not a
+        // pre/post-unload delta (test duration << accumulation time).
         "--prefill-decode-share", "0",
         // NOT set, on purpose: `--no-prefix-cache-ram` (drop idle prefixes from
         // RAM). Idle RAM retention is what we have always run and want to keep.
