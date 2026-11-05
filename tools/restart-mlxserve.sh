@@ -75,6 +75,28 @@ if [ "$tries" -ge "$TRY_LIMIT" ]; then
   exit 1
 fi
 
+# --- the "what changed?" baseline. ~/localllm/mlx-flash.log keeps exactly one
+# rotation, so a log-derived before/after is worth ~2 runs. /metrics.json counters are
+# lifetime: prompt_tokens_total/requests_success_total is the real mean depth, and
+# requests_rejected_total counts admission failures (NOT `[admission] verdict=refuse`,
+# which is a cold-plan decline the warm path usually serves anyway). Snapshot it here
+# so the A/B after a flag change compares two full counters, not surviving log lines.
+SNAP="${HOME}/.localllm/pre-restart-metrics-${SERVER}-$(date '+%Y%m%d-%H%M%S').json"
+if curl -sf --max-time 5 "$METRICS" -o "$SNAP"; then
+  python3 - "$SNAP" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); c = d.get("counters", {}); g = d.get("gauges", {})
+n = c.get("requests_success_total", 0) or 1
+print("[baseline] saved %s" % sys.argv[1])
+print("[baseline] mean prompt depth %d tok over %d requests | rejected %d | hits %d/%d | footprint %s MB | active %.1f GB" % (
+    c.get("prompt_tokens_total", 0) // n, n, c.get("requests_rejected_total", 0),
+    c.get("prefix_cache_hits_total", 0), c.get("prefix_cache_queries_total", 0) or 1,
+    g.get("memory_mb", "?"), g.get("mlx_active_bytes", 0) / 1e9))
+PY
+else
+  log "could not read $METRICS for the baseline snapshot (continuing)"
+fi
+
 # --- restart. mlxserve stops get a 50 s grace so --shutdown-persist-secs can flush
 # the SSD prefix tier; a SIGKILL there loses the sessions we are trying to preserve.
 log "stopping $SERVER"
