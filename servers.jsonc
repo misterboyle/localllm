@@ -237,18 +237,20 @@
         // 300k+ prefill runs; buys the GB that plan needs.
         "--prefill-decode-share", "0",
         // NOT set, on purpose: `--no-prefix-cache-ram` (drop idle prefixes from
-        // RAM). Idle RAM retention is what we have always run and want to keep, and
-        // evicting-to-SSD-under-pressure is already the default behaviour — see
-        // `[hot-cache] evicted N entries ... to admit a N-token prefill` and the
-        // `SSD-first: wrote N idle entries to disk` lines. It fired 0 times in 871
-        // requests because 50 of the 53 refusals had exactly ONE entry resident: the
-        // requesting session's own prefix, which the gate will not take back
-        // ("stopped: the next entry is shared with a live request", and evicting it
-        // would convert a warm replay into a colder, hungrier prefill). So that flag
-        // would have bought ~0 bytes at the refusal and cost the caching. The RAM
-        // budget itself is auto-sized (`--prefix-cache-mem` 2048 MB = the IDLE
-        // allowance only, on top of one session at the working context: 8800 MB at
-        // ctx 524288) and is left at its default.
+        // RAM). Idle RAM retention is what we have always run and want to keep.
+        // Measured across all 30 hard failures on 26.11.1 (26.10.x: zero): the
+        // evict-to-admit pass ran only 7 times and 29 of the 30 failures never
+        // reached it at all, and where a truly idle live entry existed it handed
+        // back 1.6-7.0 GB and the prefill proceeded. So cache retention was never
+        // the byte the gate needed — `pinned == resident` in all 30, i.e. the held
+        // RAM is always the caller's own KV, which the gate is right not to take
+        // (dropping it turns a 1.5 s restore into a ~4 min cold prefill). The
+        // failures are a 139-3888 MB plan shortfall, so the levers are the plan
+        // ceiling (the two flags above) and the prompt's own size, not
+        // `--prefix-cache-mem` / `--prefix-cache-entries`. The one suspicious line
+        // — `evicted 1 entries (0 MB live, 5920 MB billed)` — is an entry whose KV
+        // had already moved into a live slot, seen once; if it ever shows up twice
+        // more AND the footprint does not fall after it, that is an upstream report.
         "--mtp",
         "--metrics",
         "--temp", "1.0",
