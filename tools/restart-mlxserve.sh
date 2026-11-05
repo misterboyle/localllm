@@ -114,6 +114,13 @@ for _ in $(seq 1 180); do
 done
 if [ "$ready" = "0" ]; then
   log "FAILED: server did not answer within 6 min — read the tail of ~/localllm/${SERVER}.log"
+  log "two things to try, in this order:"
+  log "  1. a cache-format mismatch (a newer engine wrote ~/.mlx-serve/kv-cache) is the"
+  log "     likely cause on a version rollback. Move the tier aside -- deleting it loses"
+  log "     nothing but warmth, every miss is handled as a cold prefill:"
+  log '       mv ~/.mlx-serve/kv-cache ~/.mlx-serve/kv-cache.bak-<YYYYMMDD> && ./serve start '"$SERVER"
+  log '  2. or go back to the engine that was serving:'
+  log '       MLXSERVE_BIN=$HOME/.localllm/mlx-serve-26.11.1/mlx-serve-macos-arm64/mlx-serve ./serve start '"$SERVER"
   exit 1
 fi
 log "server is answering again"
@@ -142,8 +149,11 @@ act = g.get('mlx_active_bytes', 0) / 1e9
 print('[floor] idle with %s requests running: mlx_active_bytes %.1f GB | memory_mb %s | cache %.2f GB | ngram %.1f GB'
       % (g.get('requests_running', '?'), act, g.get('memory_mb', '?'),
          g.get('mlx_cache_bytes', 0) / 1e9, g.get('ngram_warm_bytes', 0) / 1e9))
-print('[floor] control: 26.10.2 sat at 81.2 GB active / 82,628 MB footprint -> delta %+.1f GB'
-      % (act - 81.2))
+print('[floor] 26.10.2 reference: 81.2 GB active / 82,628 MB footprint -- but that was a'
+      ' MID-TRAFFIC reading saved at the cutover, NOT an idle floor (Michael), so treat'
+      ' any delta as a ceiling on the leak, not the leak. Upstream #1079 is right that'
+      ' the discriminator is the hourly MIN of mlx_active_bytes over 24-48 h of real'
+      ' traffic (~2 GiB/h accumulation on 26.11.1); one boot cannot see it.')
 " || log "floor: metrics unreadable"
 log "boot receipt (memory plan as the engine read it):"
 grep -E "\[wired\]|\[hot-cache\]|Hot prefix cache|Prefill chunk|Concurrency|Context size|\[admission\]|Model ready" \
