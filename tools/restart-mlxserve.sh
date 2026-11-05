@@ -81,6 +81,37 @@ fi
 # requests_rejected_total counts admission failures (NOT `[admission] verdict=refuse`,
 # which is a cold-plan decline the warm path usually serves anyway). Snapshot it here
 # so the A/B after a flag change compares two full counters, not surviving log lines.
+#
+# /props is the one that decomposes it: weights_bytes, kv_cache_bytes, cache_bytes,
+# active_bytes, peak_bytes, available_bytes. `active - weights - kv - cache` is memory
+# with NO OWNER, which is the whole test for the 26.11.1 leak (#1071/#1091). Measured
+# controls, both engines on the same pack and the same `[preflight] weights ~70.13 GB`:
+#   26.10.2, two sessions live, 2026-11-05: active 83.05 = weights 75.30 + kv 8.61 +
+#          cache 0.91  ->  unowned -1.8 GB (zero, within gauge timing)
+#   26.11.1, ~960 requests in, 2026-11-05: active 102.9 GB with the hot cache billing
+#          6.4 GB      ->  unowned ~21 GB, which is upstream's number exactly
+# PASS after the fix ships: unowned <= ~1 GB at a quiet moment and available_bytes back
+# near 32 GB. FAIL: unowned > ~5 GB, or the hourly max of active_bytes ratchets without
+# plateauing (#1079's discriminator). So snapshot it here, at the natural boundary.
+PROPS_SNAP="${HOME}/.localllm/pre-restart-props-${SERVER}-$(date '+%Y%m%d-%H%M%S').json"
+if curl -sf --max-time 5 "${METRICS%/metrics.json}/props" -o "$PROPS_SNAP"; then
+  python3 - "$PROPS_SNAP" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1])).get("memory", {})
+G = 1e9
+try:
+    unowned = (m["active_bytes"] - m["weights_bytes"] - m["kv_cache_bytes"] - m["cache_bytes"]) / G
+    print("[leak-test] saved %s" % sys.argv[1])
+    print("[leak-test] active %.2f = weights %.2f + kv %.2f + cache %.2f -> UNOWNED %+.2f GB (control: 26.10.2 = -1.8, leaked 26.11.1 = +21) | available %.2f GB | peak %.2f GB"
+          % (m["active_bytes"]/G, m["weights_bytes"]/G, m["kv_cache_bytes"]/G, m["cache_bytes"]/G, unowned,
+             m["available_bytes"]/G, m["peak_bytes"]/G))
+except KeyError as e:
+    print("[leak-test] /props has no %s -- engine too old or field renamed" % e)
+PY
+else
+  log "could not read /props for the leak baseline (continuing)"
+fi
+
 SNAP="${HOME}/.localllm/pre-restart-metrics-${SERVER}-$(date '+%Y%m%d-%H%M%S').json"
 if curl -sf --max-time 5 "$METRICS" -o "$SNAP"; then
   python3 - "$SNAP" <<'PY'
@@ -159,4 +190,17 @@ print('[floor] 26.10.2 reference: 81.2 GB active / 82,628 MB footprint -- but th
 log "boot receipt (memory plan as the engine read it):"
 grep -E "\[wired\]|\[hot-cache\]|Hot prefix cache|Prefill chunk|Concurrency|Context size|\[admission\]|Model ready" \
   "$REPO/${SERVER}.log" | tail -12 | while IFS= read -r line; do log "  $line"; done
+# --- and the same reading once the new engine is up and idle: that is the starting
+# line the next [leak-test] above will be compared against.
+curl -sf --max-time 5 "${METRICS%/metrics.json}/props" 2>/dev/null | python3 -c "
+import json, sys
+try: m = json.load(sys.stdin).get('memory', {})
+except Exception: raise SystemExit('[floor] /props unreadable')
+G = 1e9
+if 'active_bytes' in m and 'weights_bytes' in m:
+    print('[floor] unowned at idle = %+.2f GB (active %.2f - weights %.2f - kv %.2f - cache %.2f) | available %.2f GB'
+          % ((m['active_bytes']-m['weights_bytes']-m.get('kv_cache_bytes',0)-m.get('cache_bytes',0))/G,
+             m['active_bytes']/G, m['weights_bytes']/G, m.get('kv_cache_bytes',0)/G,
+             m.get('cache_bytes',0)/G, m.get('available_bytes',0)/G))
+" || log "floor: /props unreadable"
 log "done — watch refusals: grep -c 'verdict=refuse' ~/localllm/${SERVER}.log"
