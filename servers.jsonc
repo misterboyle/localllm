@@ -213,30 +213,17 @@
         // the risk the flag's own help names is a freeze under heavy load, and
         // phys_footprint_peak 114 GB says we have already been there.
         "--os-reserve-gib", "0",
-        // Second half of the same plan ceiling. "How far under
-        // iogpu.wired_limit_mb a plan may reach" — default 8, floor 2. The pool
-        // boots at `mode=max limit=110100 MB` and `available` ran 9,641-11,164 MB
-        // against a 100-104 GB phys_footprint (weights + a 512K session at
-        // ~18.3 KB/token = 8.8 GB), while the refusals wanted 10.4-12.5 GB.
+        // How far under iogpu.wired_limit_mb a plan may reach — default 8, floor
+        // 2, never set by us before. The pool boots `mode=max limit=110100 MB`
+        // while the process holds 100-104 GB (weights + a 512K session at
+        // ~18.3 KB/token = 8.8 GB), so `available` lands at 9.6-11.2 GB against
+        // plans wanting 10.4-12.5 GB. 4 buys back 4 GB; 2 is the floor.
         // VERIFY AT NEXT BOOT: if `[wired] mode=max limit=` rises ~4 GB above
-        // 110100, this flag is buying planable pool and 2 is the floor if we still
-        // decline; if it still reads 110100 the margin lands somewhere else and
-        // this line should come back out. Cost either way: plans run closer to the
-        // hard wired ceiling, where the failure is a Metal OOM (request dies,
-        // server lives) instead of a clean refusal.
+        // 110100 this flag is buying planable pool; if it still reads 110100 the
+        // margin lands elsewhere and this line comes out. Cost either way: plans
+        // run closer to the hard ceiling, where the failure is a Metal OOM
+        // (request dies, server lives) rather than a clean refusal.
         "--wired-margin-gib", "4",
-        "--wired-margin-gib", "4",
-        // Idle conversations live on the SSD tier, not in RAM. On this hybrid/MoE
-        // arch --prefix-cache-mem sizes only the IDLE allowance and the hot-cache
-        // budget auto-sizes to "one session at the working context + idle":
-        // 10848 MB at ctx 512K. Log shows why that is the wrong trade here — every
-        // conversation switch was a +4.5 to +5.7 GB RAM jump (1 entry -> 2), and
-        // the SSD tier already serves 865/871 hits (99.3%). Restore is ~1.5 s for a
-        // 347k-token replay (server's own "39.9 tok/s, 347667 cached"), re-prefill
-        // cold would be ~4 min. NB do NOT use `--prefix-cache-mem 0` for this: the
-        // --help text reads "0 = disable the byte budget" (unbounded RAM) while the
-        // boot banner says "0 = no idle entries" — this flag has no such clash.
-        "--no-prefix-cache-ram",
         // HTTP mode is NOT mlx-serve's default (interactive chat is) — explicit.
         "--serve",
         "--ctx-size", "524288",
@@ -249,6 +236,19 @@
         // schedule, prefills take turns. Costs a waiting newcomer some TTFT while a
         // 300k+ prefill runs; buys the GB that plan needs.
         "--prefill-decode-share", "0",
+        // NOT set, on purpose: `--no-prefix-cache-ram` (drop idle prefixes from
+        // RAM). Idle RAM retention is what we have always run and want to keep, and
+        // evicting-to-SSD-under-pressure is already the default behaviour — see
+        // `[hot-cache] evicted N entries ... to admit a N-token prefill` and the
+        // `SSD-first: wrote N idle entries to disk` lines. It fired 0 times in 871
+        // requests because 50 of the 53 refusals had exactly ONE entry resident: the
+        // requesting session's own prefix, which the gate will not take back
+        // ("stopped: the next entry is shared with a live request", and evicting it
+        // would convert a warm replay into a colder, hungrier prefill). So that flag
+        // would have bought ~0 bytes at the refusal and cost the caching. The RAM
+        // budget itself is auto-sized (`--prefix-cache-mem` 2048 MB = the IDLE
+        // allowance only, on top of one session at the working context: 8800 MB at
+        // ctx 524288) and is left at its default.
         "--mtp",
         "--metrics",
         "--temp", "1.0",
