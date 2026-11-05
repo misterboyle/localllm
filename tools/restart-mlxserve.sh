@@ -117,6 +117,34 @@ if [ "$ready" = "0" ]; then
   exit 1
 fi
 log "server is answering again"
+# --- the floor. What the process holds with NO session loaded is the fixed cost, and
+# it is the number that actually moved across the 26.11.1 bump: mlx_active_bytes was
+# 81.2 GB on 26.10.2 (see ~/.localllm/pre-bump-metrics-26.10.2.json) against 102.9 GB
+# after, with identical weights, an identical 32 GB n-gram table and the same
+# `[wired] mode=max limit=110100 MB`. Sample it once the server is up AND idle, so a
+# first request does not pollute the reading.
+for _ in $(seq 1 12); do
+  busy="$(curl -sf --max-time 3 "$METRICS" 2>/dev/null | python3 -c "
+import json, sys
+try: g = json.load(sys.stdin).get('gauges', {})
+except Exception: g = {}
+print(int(g.get('requests_running', 0) or 0) + int(g.get('requests_prefilling', 0) or 0))
+" 2>/dev/null || echo 1)"
+  [ "$busy" = "0" ] && break
+  sleep 5
+done
+curl -sf --max-time 5 "$METRICS" 2>/dev/null | python3 -c "
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit('[floor] no metrics to read')
+g = d.get('gauges', {})
+act = g.get('mlx_active_bytes', 0) / 1e9
+print('[floor] idle with %s requests running: mlx_active_bytes %.1f GB | memory_mb %s | cache %.2f GB | ngram %.1f GB'
+      % (g.get('requests_running', '?'), act, g.get('memory_mb', '?'),
+         g.get('mlx_cache_bytes', 0) / 1e9, g.get('ngram_warm_bytes', 0) / 1e9))
+print('[floor] control: 26.10.2 sat at 81.2 GB active / 82,628 MB footprint -> delta %+.1f GB'
+      % (act - 81.2))
+" || log "floor: metrics unreadable"
 log "boot receipt (memory plan as the engine read it):"
 grep -E "\[wired\]|\[hot-cache\]|Hot prefix cache|Prefill chunk|Concurrency|Context size|\[admission\]|Model ready" \
   "$REPO/${SERVER}.log" | tail -12 | while IFS= read -r line; do log "  $line"; done

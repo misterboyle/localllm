@@ -213,28 +213,24 @@
         // the risk the flag's own help names is a freeze under heavy load, and
         // phys_footprint_peak 114 GB says we have already been there.
         "--os-reserve-gib", "0",
-        // How far under iogpu.wired_limit_mb a plan may reach — default 8, floor
-        // 2, never set by us before. The pool boots `mode=max limit=110100 MB`
-        // while the process holds 100-104 GB (weights + a 512K session at
-        // ~18.3 KB/token = 8.8 GB), so `available` lands at 9.6-11.2 GB against
-        // plans wanting 10.4-12.5 GB. 4 buys back 4 GB; 2 is the floor.
-        // VERIFY AT NEXT BOOT: if `[wired] mode=max limit=` rises ~4 GB above
-        // 110100 this flag is buying planable pool; if it still reads 110100 the
-        // margin lands elsewhere and this line comes out. Cost either way: plans
-        // run closer to the hard ceiling, where the failure is a Metal OOM
-        // (request dies, server lives) rather than a clean refusal.
-        "--wired-margin-gib", "4",
         // HTTP mode is NOT mlx-serve's default (interactive chat is) — explicit.
         "--serve",
         "--ctx-size", "524288",
         "--kv-quant", "8",
-        // The one default that actually moved under us, 26.10.2 -> 26.11.1: 0 ->
-        // 0.25. It lets a long prefill run beside a live decoder and "also narrows
-        // that prefill's chunks" — so plans got billed with someone else's KV
-        // resident (26.10.2 planned at width 8192/4096 and never dropped below
-        // 12.3 GB available; every 26.11.1 refusal quotes width=512). 0 = the old
-        // schedule, prefills take turns. Costs a waiting newcomer some TTFT while a
-        // 300k+ prefill runs; buys the GB that plan needs.
+        // THE ONE VARIABLE. 26.10.2 -> 26.11.1 moved this default 0 -> 0.25, and it
+        // is the only default that moved in the memory path (`--os-reserve-gib` and
+        // `--wired-margin-gib` read identically in both binaries). 26.10.x logged 0
+        // hard failures in 2,091 requests on this model; 26.11.1 logged 30 in 1,964.
+        // Set to 0 = "the old schedule" per its own help, i.e. a restore, not a
+        // tweak — so if refusals persist, the schedule is exonerated by experiment
+        // and the blame is elsewhere. NOT proven as the cause: 29 of the 30 failures
+        // were a lone session's warm replay (no concurrent decode in sight), per-
+        // session billed bytes are the same on both sides (20.85 vs 20.61 KB/token),
+        // and prompt depth went DOWN (median 200,473 -> 173,435). What did move is
+        // the unbilled floor: mlx_active_bytes 81.2 GB on 26.10.2 (saved seconds
+        // before the cutover) vs 102.9 GB now, same weights, same 32 GB n-gram table,
+        // same `[wired] mode=max limit=110100 MB`, with the whole prefix-cache budget
+        // only 10,848 MB of it. Read that at idle after this boot.
         "--prefill-decode-share", "0",
         // NOT set, on purpose: `--no-prefix-cache-ram` (drop idle prefixes from
         // RAM). Idle RAM retention is what we have always run and want to keep.
