@@ -238,10 +238,26 @@ def probe_qwen_code() -> dict:
             "detail": {"total": data.get("total_count"), "titles": len(seen_titles)}}
 
 
+def poll_topic(marker: str = "") -> list[dict]:
+    """Read a topic back. ntfy's `since` takes 'all', 'latest' or a bare duration
+    (5m, 2h) — a leading minus like '-10m' is NOT valid and silently returns zero
+    rows, which once made me announce that a publish had stored nothing. Empty
+    output from a poll is a measurement of the poll, so always pair it with a
+    since=all read (check_channel does)."""
+    topic = open(TOPIC_FILE).read().strip()
+    req = urllib.request.Request(topic + "/json?poll=1&since=all",
+                                 headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        raw = resp.read().decode()
+    rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    return [r for r in rows if marker in (r.get("message", "") + r.get("title", ""))]
+
+
 def send_push(title: str, message: str, click: str = "") -> str:
     """ntfy, same play as macwatch: full-URL topic from ~/.localllm/watch/ntfy_url,
-    Priority 3 always, route in the Click header. A 200 certifies INGESTION only —
-    the witness is the phone."""
+    Priority 3 always, route in the Click header. A 200 with a message id proves
+    the server STORED it — it cannot prove a phone buzzed, and the keyless API
+    cannot see subscribers at all, so the phone stays the only witness."""
     try:
         topic = open(TOPIC_FILE).read().strip()
     except OSError:
@@ -253,9 +269,16 @@ def send_push(title: str, message: str, click: str = "") -> str:
         req.add_header("Click", click)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            return f"ntfy {resp.status} (ingested — confirm the phone buzzed)"
+            body = resp.read().decode()
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return f"ntfy FAILED: {type(exc).__name__}: {exc}"
+    try:
+        msg_id = json.loads(body).get("id", "")
+    except json.JSONDecodeError:
+        msg_id = ""
+    if not msg_id:
+        return f"ntfy accepted (no id in body) — NOT stored: {body[:60]!r}"
+    return f"ntfy stored id={msg_id} (buzz is still the only real witness)"
 
 
 def live_now() -> str:
@@ -291,6 +314,8 @@ def main() -> int:
                     help="one heartbeat line per run — what launchd uses, so the log proves the probe ran")
     ap.add_argument("--no-notify", action="store_true")
     ap.add_argument("--test-ping", action="store_true", help="send one push and exit")
+    ap.add_argument("--check-channel", action="store_true",
+                    help="send a marker push and read it back from the topic, then exit")
     ap.add_argument("--reset", action="store_true")
     args = ap.parse_args()
 
@@ -302,6 +327,20 @@ def main() -> int:
         print(send_push("TEST qwen4 watcher", "watcher wired to this topic; no model yet.",
                         "https://huggingface.co/Qwen"))
         return 0
+    if args.check_channel:
+        marker = "channelcheck-" + live_now().replace(":", "")
+        print("send:  " + send_push("Qwen 4 channel check", marker, "https://huggingface.co/Qwen"))
+        try:
+            rows = poll_topic(marker)
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            print(f"read:  poll FAILED {type(exc).__name__}")
+            return 20
+        print(f"read:  {len(rows)} matching message(s) on the topic "
+              f"({'STORED AND RETRIEVABLE' if rows else 'NOT retrievable'})")
+        # Server-side we cannot see subscribers on the keyless tier, so a clean
+        # send+read still cannot say whether the phone is subscribed.
+        print("phone: not observable from here — subscribe, enable Instant delivery, then send one")
+        return 0 if rows else 20
 
     state = load_state()
     probes = [

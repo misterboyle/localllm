@@ -8,6 +8,7 @@ works against its own fixtures.
 """
 
 import contextlib
+import json
 import io
 import os
 import sys
@@ -153,6 +154,19 @@ def main() -> int:
         # Offline is not a defect: red that means 'no wifi' teaches people to
         # ignore red. Skipped is stated, never silent.
         leg("L8 live HF org (SKIPPED: no network)", True, f"skip {type(exc).__name__}")
+
+    # L9 — the ntfy read-back must use a valid `since` form. '-10m' parses as a
+    # zero window and silently returns nothing, which once produced a confident
+    # false claim that a publish had stored nothing. No publish here: a test that
+    # pings his phone on every `make test` is a test that gets deleted.
+    try:
+        src = open(SCRIPT).read()
+        sane = "since=all" in src and "since=-" not in src
+        empty = live.poll_topic("marker-that-can-not-exist-4f2a") == []
+        leg("L9 channel poll uses a valid since form and returns a list", sane and empty,
+            f"since=all present={('since=all' in src)}, bad form={'since=-' in src}")
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        leg("L9 channel poll (SKIPPED: no network)", True, f"skip {type(exc).__name__}")
 
     failed = [n for n, ok, _ in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} legs pass"
