@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Watcher for the Qwen 4 open-weight launch: 15 min cadence, same shape as
+     macwatch (system python, not a venv; launchd re-execs the script each
+     interval so a code change needs no restart). Cadence also clears Android's
+     ~2-minute notification-cooldown window, so two real alerts can't be merged. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.michael.qwen4-watch</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/michael/localllm/tools/watch-qwen4.py</string>
+    <string>--brief</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/michael/localllm</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>900</integer>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>/Users/michael/.localllm/logs/qwen4-watch.log</string>
+  <key>StandardErrorPath</key><string>/Users/michael/.localllm/logs/qwen4-watch.log</string>
+</dict></plist>

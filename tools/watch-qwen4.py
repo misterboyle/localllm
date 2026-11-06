@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
-"""Poll for the Qwen 4 launch across the places it would show up first.
+"""Watch for the Qwen 4 launch, open-weight only.
 
 Usage:
-    python3 tools/watch-qwen4.py            # human-readable status line per probe
-    python3 tools/watch-qwen4.py --json     # machine-readable
-    python3 tools/watch-qwen4.py --quiet    # only print on a hit or a probe failure
+    python3 tools/watch-qwen4.py                  # full status table
+    python3 tools/watch-qwen4.py --quiet          # print only on an alert
+    python3 tools/watch-qwen4.py --json           # machine-readable
+    python3 tools/watch-qwen4.py --test-ping      # fire one push and report the code
+    python3 tools/watch-qwen4.py --reset          # forget alerted state (re-alert)
 
-Every probe carries a positive control, because the answer we care about is a
-zero and a zero is indistinguishable from a broken probe. A probe whose control
-fails reports PROBE_FAIL, never "not shipped".
+Scope (Michael, 2026-11-06): we run the open-weight qfn line and nothing else —
+never ran a 27B in anger, no interest in API-only tiers. So an ALERT is a repo in
+the Qwen org carrying the qwen4 needle **and real weight files**, plus any new
+model *class* we have not already run. API-tier sightings (OpenRouter, models.dev
+hosted catalogues) are advisory: they say a checkpoint exists, they are never a
+launch for us and they cannot move the exit code.
 
-Exit codes: 0 = nothing new, 10 = candidate found (alert), 20 = a probe failed
-(silence is not evidence), 1 = CLI/usage error.
+Every probe carries a positive control — a zero is only evidence if the same
+probe can still see the generation we already run (qwen3.8). Control failure
+exits 20 and says "UNTRUSTED"; it never reports "not shipped".
+
+Exit codes: 0 = nothing new, 10 = alert-worthy candidate, 20 = probe broken.
+Alert cadence must outlast Android's ~2-minute notification-cooldown window
+(see wiki [[push-delivery-is-not-publish]]): cron at */15 clears it easily.
 """
+
+# /usr/bin/python3 is 3.9.6 and launchd runs the watcher under it, so the PEP 604
+# annotations below ('str | None') must stay compile-time only. Without this line
+# the watcher dies at import on the first scheduled run and every alert dies with it.
+from __future__ import annotations
 
 import argparse
 import json
@@ -24,63 +39,140 @@ import urllib.parse
 import urllib.request
 
 STATE_FILE = os.path.expanduser("~/.localllm/watch/qwen4.json")
-USER_AGENT = "localllm-watch-qwen4/1.0"
+TOPIC_FILE = os.path.expanduser("~/.localllm/watch/ntfy_url")
+USER_AGENT = "localllm-watch-qwen4/2.0"
 TIMEOUT = 25
+PRIORITY = "3"  # macwatch law: always 3, no branch that can shout.
 
-# Qwen4 / Qwen-4 / Qwen4.5 / qwen4-max. Anchored on the name, so Qwen3.8 and
-# Qwen-Image-2.1 cannot match; deliberately also fires on 4.5, which is a launch too.
+# Qwen4 / Qwen-4 / Qwen4.5 / qwen4-coder. Anchored on the name so Qwen3.8 and
+# Qwen-Image cannot match; fires on 4.5 too, which is also a launch.
 NEEDLE = re.compile(r"^qwen[-_. ]*4", re.IGNORECASE)
+# The generation we already run: the control that says "this probe can see a
+# Qwen model at all".
+CONTROL = re.compile(r"qwen[-_. ]*3[.8]", re.IGNORECASE)
 
-# The generation we already run — the control that says "this probe can see a
-# Qwen model at all". Verified live: HF newest repo Qwen-Image-2.1-Turbo (Oct 9),
-# OpenRouter serves 6 qwen3.8 ids, Qwen Code has 5 merged qwen4 PRs.
-CONTROL = re.compile(r"qwen[-_. ]*3[.8]|qwen3\.8|qwen-4b", re.IGNORECASE)
+UPSTREAM = ["Qwen"]
+# Where we would actually pull from: GGUF for llama.cpp, MLX for mlx-serve.
+QUANT_ORGS = ["unsloth", "mlx-community"]
+ADVISORY_ORGS = ["alibaba"]  # models.dev's DashScope catalogue = API tiers
 
-UPSTREAM_AUTHORS = ["Qwen"]
-QUANT_AUTHORS = ["unsloth", "mlx-community"]
+# Every model class this box has ever run, read from each model's own
+# config.json on 2026-11-06 — not from a blog. A candidate outside this ledger
+# is a NEW class, which Michael said he would evaluate.
+CLASSES = {
+    "qwen4_exp": "Flash-Next hybrid MoE (48L/512 exp, ~6B active) — the daily driver",
+    "qwen3_5_moe": "Qwen3.5-35B-A3B MoE — ran in the llama.cpp era",
+    "qwen3_5": "Qwen3.8-27B dense — ran Aug-Sep, now the deep fallback",
+}
 
-# Expected architecture needle. Our daily driver's own config.json already reads
-# model_type=qwen4_exp / architectures=[Qwen4ExpForConditionalGeneration], so the
-# launch repo is expected to carry the non-exp form. Informational, not a gate.
-ARCH_EXPECTED = re.compile(r"qwen4(?!_exp)", re.IGNORECASE)
+LLAMA_ARCH_URL = "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/src/llama-arch.cpp"
+MLX_SERVE_RELEASES = "https://api.github.com/repos/ddalcu/mlx-serve/releases?per_page=8"
 
 
-def get_json(url: str, payload: dict | None = None) -> object:
-    """Fetch JSON over GET (or POST when payload is given). Raises on any failure."""
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT})
-    if data:
-        req.add_header("Content-Type", "application/json")
+def get_json(url: str) -> object:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         return json.loads(resp.read().decode())
-
-
-def hf_org(author: str, search: str | None = None) -> list[dict]:
-    sort = "&sort=createdAt&direction=-1" if search is None else ""
-    needle = f"&search={urllib.parse.quote(search)}" if search else ""
-    url = (
-        f"https://huggingface.co/api/models?author={urllib.parse.quote(author)}"
-        f"{needle}{sort}&limit=50"
-    )
-    rows = get_json(url)
-    return rows if isinstance(rows, list) else []
 
 
 def name_of(repo_id: str) -> str:
     return repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
 
 
-def probe_hf(authors: list[str], label: str) -> dict:
-    """Newest repos in each org, sorted by createdAt: repo creation IS the launch.
+def hf_org(author: str, search: str | None = None) -> list[dict]:
+    """Org listing sorted by **createdAt**. lastModified is useless as a tripwire:
+    Qwen3.8-27B and Flash-Next both bumped 2026-11-05 with no release behind it."""
+    q = {"author": author, "limit": "50"}
+    if search:
+        q["search"] = search
+    else:
+        q["sort"], q["direction"] = "createdAt", "-1"
+    url = "https://huggingface.co/api/models?" + urllib.parse.urlencode(q)
+    rows = get_json(url)
+    return rows if isinstance(rows, list) else []
 
-    Sorted by createdAt rather than lastModified because lastModified churns on
-    ordinary file edits — Qwen3.8-27B and Flash-Next both bumped 2026-11-05 with
-    no release behind it, which would have been a false alarm.
+
+def hf_details(repo_id: str) -> dict:
+    """One call: does it have downloadable weights, how big, and what class is it.
+
+    'Repo exists' and 'we can download it' are different events — a placeholder
+    repo is the announcement, the safetensors list is the launch.
     """
-    hits: list[str] = []
-    controls: dict[str, int] = {}
+    url = f"https://huggingface.co/api/models/{urllib.parse.quote(repo_id, safe='/')}?blobs=true"
+    d = get_json(url)
+    shards = [s for s in (d.get("siblings") or []) if s.get("rfilename", "").endswith(".safetensors")]
+    gb = sum(s.get("size") or 0 for s in shards) / 1e9
+    params = (d.get("safetensors") or {}).get("parameters", {}).get("total", 0)
+    return {"shards": len(shards), "gb": round(gb, 1), "params_b": round(params / 1e9, 1),
+            "downloads": d.get("downloads")}
+
+
+def hf_config(repo_id: str) -> dict:
+    conf = get_json(f"https://huggingface.co/{repo_id}/raw/main/config.json")
+    text = conf.get("text_config") or {}
+    mtype = conf.get("model_type") or text.get("model_type") or "?"
+    return {
+        "model_type": mtype,
+        "architectures": conf.get("architectures") or [],
+        "layers": text.get("num_hidden_layers") or conf.get("num_hidden_layers"),
+        "experts": text.get("num_experts") or conf.get("num_experts") or 0,
+        "active_experts": text.get("num_experts_per_tok") or conf.get("num_experts_per_tok"),
+        "ctx": text.get("max_position_embeddings") or conf.get("max_position_embeddings"),
+        "multimodal": "image_token_id" in conf or "vision_config" in conf,
+    }
+
+
+def llama_support(model_type: str) -> str:
+    """Is the architecture in llama.cpp's registry? 'qwen4_exp' → 'qwen4exp'.
+    Verified live: master already lists qwen35, qwen35moe, qwen4exp."""
+    try:
+        req = urllib.request.Request(LLAMA_ARCH_URL, headers={"User-Agent": USER_AGENT})
+        body = urllib.request.urlopen(req, timeout=TIMEOUT).read().decode()
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return f"probe failed ({type(exc).__name__})"
+    token = model_type.replace("_", "")
+    return "yes" if f'"{token}"' in body else "NO — needs a loader first"
+
+
+def mlx_support(needle: str) -> str:
+    """Has mlx-serve (the daily-driver engine) named it in a release note?"""
+    try:
+        rows = get_json(MLX_SERVE_RELEASES)
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return f"probe failed ({type(exc).__name__})"
+    for rel in rows:
+        if needle.lower() in (rel.get("body") or "").lower():
+            return f"yes, since {rel.get('tag_name')}"
+    return "not mentioned in last 8 releases"
+
+
+def describe(repo_id: str) -> str:
+    """One line: can we download it, what class is it, can our engines load it."""
+    bits = []
+    try:
+        det = hf_details(repo_id)
+        bits.append(f"{det['shards']} shards/{det['gb']} GB, {det['params_b']}B params"
+                    if det["shards"] else "no weights yet (placeholder)")
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        bits.append(f"file listing failed ({type(exc).__name__})")
+    try:
+        cfg = hf_config(repo_id)
+        cls = CLASSES.get(cfg["model_type"], "NEW CLASS → evaluate")
+        bits.append(f"arch={cfg['model_type']} ({cls})")
+        if cfg["experts"]:
+            bits.append(f"{cfg['experts']} experts/{cfg['active_experts']} active")
+        bits.append(f"{cfg['layers']}L, ctx {cfg['ctx']}, {'MM' if cfg['multimodal'] else 'text'}")
+        bits.append(f"llama.cpp: {llama_support(cfg['model_type'])}")
+        bits.append(f"mlx-serve: {mlx_support(name_of(repo_id))}")
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        bits.append(f"config unreadable ({type(exc).__name__})")
+    return repo_id + " — " + "; ".join(bits)
+
+
+def probe_repos(authors: list[str], tier: str, label: str) -> dict:
+    hits, controls = [], {}
     for author in authors:
-        repos = hf_org(author) + hf_org(author, search="Qwen4")
+        repos = hf_org(author) + (hf_org(author, search="Qwen4") if tier == "alert" else [])
         seen = set()
         for repo in repos:
             rid = repo.get("id", "")
@@ -91,104 +183,96 @@ def probe_hf(authors: list[str], label: str) -> dict:
                 hits.append(rid)
             if CONTROL.search(rid):
                 controls[author] = controls.get(author, 0) + 1
-    return {
-        "probe": label,
-        "hits": sorted(set(hits)),
-        # Control = the probe listed at least one *existing* Qwen-era repo.
-        "control": "ok" if controls else "FAIL(no 3.x repo listed)",
-        "detail": controls,
-    }
+    return {"probe": label, "tier": tier, "hits": sorted(set(hits)),
+            "control": "ok" if controls else "FAIL(no qwen3.x repo listed)", "detail": controls}
 
 
-def probe_openrouter() -> dict:
-    rows = get_json("https://openrouter.ai/api/v1/models").get("data", [])
-    ids = [m.get("id", "") for m in rows]
+def probe_ids(url: str, label: str, pick) -> dict:
+    """Advisory catalogue probe: needle on model IDS only. A raw substring scan of
+    models.dev returns 5 'qwen4' hits today, all the word Qwen4 inside
+    qwen3.8-flash-next's description — a description-shaped needle is a
+    false-positive machine."""
+    data = get_json(url)
+    ids = pick(data)
     hits = [i for i in ids if re.search(r"qwen[-_. ]*4", i, re.IGNORECASE)]
-    return {
-        "probe": "openrouter",
-        "hits": hits,
-        "control": "ok" if any("qwen3.8" in i for i in ids) else "FAIL(no qwen3.8 id)",
-        "detail": {"models": len(ids)},
-    }
+    control = sum(1 for i in ids if CONTROL.search(i))
+    return {"probe": label, "tier": "advisory", "hits": sorted(set(hits)),
+            "control": "ok" if control else f"FAIL(only {control} qwen3.x ids)",
+            "detail": {"qwen3x_ids": control, "ids": len(ids)}}
 
 
-def probe_modelsdev() -> dict:
-    """Needle on model IDS only. A raw substring scan of this file returns 5
-    'qwen4' hits today, all of them the word 'Qwen4' inside qwen3.8-flash-next's
-    description text — a description-shaped needle is a false-positive machine.
+def openrouter_pick(data) -> list[str]:
+    return [m.get("id", "") for m in data.get("data", [])]
 
-    Shape as read 2026-11-06: the root object IS the provider map (no 'providers'
-    key), each provider holding a 'models' dict keyed by that provider's model id.
-    The 'alibaba' provider is DashScope's hosted catalog, so this probe also sees
-    API-only tiers that will never appear on Hugging Face.
-    """
-    data = get_json("https://models.dev/api.json")
-    hits: list[str] = []
-    control = 0
+
+def modelsdev_pick(data) -> list[str]:
+    # Shape read 2026-11-06: the root object IS the provider map (no 'providers' key).
+    out = []
     for provider, blob in data.items():
-        if not isinstance(blob, dict):
-            continue
-        for model_id in (blob.get("models") or {}):
-            if re.search(r"qwen[-_. ]*4", model_id, re.IGNORECASE):
-                hits.append(f"{provider}/{model_id}")
-            if "qwen3.8" in model_id.lower():
-                control += 1
-    return {
-        "probe": "models.dev",
-        "hits": sorted(set(hits)),
-        "control": "ok" if control else "FAIL(no qwen3.8 id)",
-        "detail": {"qwen38_ids": control},
-    }
+        if isinstance(blob, dict) and provider in ADVISORY_ORGS:
+            out += [str(m) for m in (blob.get("models") or {})]
+    return out
 
 
 def probe_qwen_code() -> dict:
-    """Leading indicator: Qwen Code gains qwen4 ids days before weights exist.
+    """Leading indicator only: Qwen Code gained qwen4 ids on Oct 28 and Oct 31, days
+    before any downloadable thing existed. Never an alert.
 
-    Merged history as of this writing: #15762 (Oct 28, sizes qwen4 at 1M ctx),
-    #15987 (Oct 31, reasoning effort for the qwen4 generation). Nothing newer
-    means nothing newer has landed.
+    Control is 'can this probe see a qwen4 PR at all' — the repo's merged qwen4
+    history (#15762, #15987) does not disappear, and 'sort=updated' pushes old rows
+    off the top ten, so a control keyed on a *specific* number would lie. A first
+    version keyed the control on qwen3.x titles, which this probe can never
+    contain, and it correctly refused to certify its own silence.
     """
-    url = (
-        "https://api.github.com/search/issues?q="
-        + urllib.parse.quote("repo:QwenLM/qwen-code qwen4 is:pr")
-        + "&sort=updated&order=desc&per_page=10"
-    )
+    url = ("https://api.github.com/search/issues?q="
+           + urllib.parse.quote("repo:QwenLM/qwen-code qwen4 is:pr")
+           + "&sort=updated&order=desc&per_page=15")
     data = get_json(url)
-    items = data.get("items", []) or []
-    merged = [
-        f"#{i['number']} {i.get('pull_request', {}).get('merged_at') or 'unmerged'} "
-        f"{i.get('title', '')[:60]}"
-        for i in items
-    ]
-    return {
-        "probe": "qwen-code-prs",
-        "hits": [],  # PRs are a leading signal, never a launch claim
-        "control": "ok" if items else "FAIL(search returned nothing)",
-        "detail": {"newest": merged[:3], "total": data.get("total_count")},
-    }
+    items = data.get("items") or []
+    seen_titles = [i.get("title", "") for i in items]
+    hits = [f"#{i.get('number')} merged {(i.get('pull_request') or {}).get('merged_at') or 'unmerged'}: "
+            f"{i.get('title', '')[:60]}" for i in items
+            if re.search(r"qwen4", i.get("title", ""), re.IGNORECASE)]
+    return {"probe": "qwen-code-prs", "tier": "advisory", "hits": hits[:5],
+            "control": "ok" if hits else "FAIL(no qwen4 PR visible)",
+            "detail": {"total": data.get("total_count"), "titles": len(seen_titles)}}
 
 
-def probe_config(repo_id: str) -> dict:
-    """Read a candidate's config.json so the hit names its architecture."""
-    url = f"https://huggingface.co/{repo_id}/raw/main/config.json"
-    conf = get_json(url)
-    arch = conf.get("architectures") or []
-    mtype = conf.get("model_type") or ""
-    text_conf = conf.get("text_config") or {}
-    blob = " ".join([str(a) for a in arch] + [mtype, str(text_conf.get("model_type", ""))])
-    return {
-        "architectures": arch,
-        "model_type": mtype,
-        "new_gen_arch": bool(ARCH_EXPECTED.search(blob)),
-    }
+def send_push(title: str, message: str, click: str = "") -> str:
+    """ntfy, same play as macwatch: full-URL topic from ~/.localllm/watch/ntfy_url,
+    Priority 3 always, route in the Click header. A 200 certifies INGESTION only —
+    the witness is the phone."""
+    try:
+        topic = open(TOPIC_FILE).read().strip()
+    except OSError:
+        return "NO CHANNEL (no topic in " + TOPIC_FILE + "; alert logged to stdout)"
+    req = urllib.request.Request(topic, data=message.encode(), method="POST",
+                                headers={"User-Agent": USER_AGENT, "Title": title,
+                                         "Priority": PRIORITY, "Tags": "rocket"})
+    if click:
+        req.add_header("Click", click)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return f"ntfy {resp.status} (ingested — confirm the phone buzzed)"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return f"ntfy FAILED: {type(exc).__name__}: {exc}"
+
+
+def live_now() -> str:
+    import datetime
+
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
 
 
 def load_state() -> dict:
     try:
         with open(STATE_FILE) as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except (OSError, json.JSONDecodeError):
-        return {"seen": []}
+        data = {}
+    for key in ("seen_created", "seen_weights", "seen_advisory"):
+        data.setdefault(key, [])
+    return data
 
 
 def save_state(state: dict) -> None:
@@ -200,83 +284,114 @@ def save_state(state: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Poll for the Qwen 4 launch.")
-    parser.add_argument("--json", action="store_true", help="machine-readable output")
-    parser.add_argument("--quiet", action="store_true", help="print only on hit or probe failure")
-    parser.add_argument("--reset", action="store_true", help="clear the seen-candidates state")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description="Watch for the Qwen 4 open-weight launch.")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--quiet", action="store_true", help="print only on an alert")
+    ap.add_argument("--brief", action="store_true",
+                    help="one heartbeat line per run — what launchd uses, so the log proves the probe ran")
+    ap.add_argument("--no-notify", action="store_true")
+    ap.add_argument("--test-ping", action="store_true", help="send one push and exit")
+    ap.add_argument("--reset", action="store_true")
+    args = ap.parse_args()
 
     if args.reset:
-        save_state({"seen": []})
+        save_state({"seen_created": [], "seen_weights": [], "seen_advisory": []})
         print("state cleared")
+        return 0
+    if args.test_ping:
+        print(send_push("TEST qwen4 watcher", "watcher wired to this topic; no model yet.",
+                        "https://huggingface.co/Qwen"))
         return 0
 
     state = load_state()
-    seen = set(state.get("seen", []))
-
-    results = []
-    failures = []
     probes = [
-        ("hf_upstream", lambda: probe_hf(UPSTREAM_AUTHORS, "hf_upstream")),
-        ("hf_quants", lambda: probe_hf(QUANT_AUTHORS, "hf_quants")),
-        ("openrouter", probe_openrouter),
-        ("modelsdev", probe_modelsdev),
-        ("qwencode", probe_qwen_code),
+        ("hf_upstream", lambda: probe_repos(UPSTREAM, "alert", "hf_upstream")),
+        ("hf_runnable", lambda: probe_repos(QUANT_ORGS, "alert", "hf_runnable")),
+        ("openrouter", lambda: probe_ids("https://openrouter.ai/api/v1/models", "openrouter", openrouter_pick)),
+        ("models.dev", lambda: probe_ids("https://models.dev/api.json", "models.dev", modelsdev_pick)),
+        ("qwen-code-prs", probe_qwen_code),
     ]
+
+    results, failures = [], []
     for name, fn in probes:
         try:
-            out = fn()
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, KeyError) as exc:
-            failures.append(f"{name}: {type(exc).__name__}: {exc}")
-            out = {"probe": name, "hits": [], "control": f"FAIL(exception {type(exc).__name__})", "detail": {}}
-        results.append(out)
+            results.append(fn())
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError) as exc:
+            failures.append(f"{name}: {type(exc).__name__}")
+            results.append({"probe": name, "tier": "?", "hits": [],
+                            "control": f"FAIL({type(exc).__name__})", "detail": {}})
 
-    fresh = sorted({h for r in results for h in r["hits"]} - seen)
+    alerts, advisory = [], []
+    upstream_hits = [h for r in results if r["probe"] == "hf_upstream" for h in r["hits"]]
+    quant_hits = [h for r in results if r["probe"] == "hf_runnable" for h in r["hits"]]
+    for rid in upstream_hits:
+        try:
+            det = hf_details(rid)
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            det = {"shards": 0, "error": str(exc)}
+        alerts.append({"repo": rid, "weights": det.get("shards", 0) > 0, "detail": det,
+                       "new_created": rid not in state["seen_created"],
+                       "new_weights": det.get("shards", 0) > 0 and rid not in state["seen_weights"]})
+    for rid in quant_hits:
+        advisory.append(f"quant/port ready: {rid}")
+    for r in results:
+        if r["tier"] == "advisory":
+            advisory += [f"{r['probe']}: {h}" for h in r["hits"]]
+
     control_fails = [r["probe"] for r in results if not r.get("control", "ok").startswith("ok")]
-    for rid in fresh:
-        if rid.startswith("Qwen/"):
-            try:
-                results.append({"probe": f"config:{rid}", "hits": [], **probe_config(rid)})
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, KeyError) as exc:
-                # Candidate still counts; the architecture line is detail.
-                results.append({"probe": f"config:{rid}", "hits": [], "error": str(exc)})
+    fire = [a for a in alerts if a["new_created"] or a["new_weights"]]
 
-    # Deliver first, record second. An earlier version saved state before
-    # printing, so a crash at print time (or a notifier that failed) marked the
-    # launch as already-seen and the alert was lost with no trace — a one-shot
-    # watcher must never consume the event before it has been told.
+    # Deliver first, record second — a watcher that saves state before it speaks
+    # loses the event forever (found by sabotage, 2026-11-06).
+    lines = []  # (repo, text)
+    for a in fire:
+        what = "WEIGHTS PUBLISHED" if a["new_weights"] else "repo created, no weights yet"
+        try:
+            text = describe(a["repo"])
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError) as exc:
+            # describe() is detail; the alert itself must still go out.
+            text = a["repo"] + f" (detail failed: {type(exc).__name__})"
+        lines.append((a["repo"], f"Qwen 4 {what}: {text}"))
+    if not args.no_notify:
+        for repo, line in lines:
+            print("[push] " + send_push("Qwen 4 open weight", line,
+                                        f"https://huggingface.co/{repo}"))
+
     if args.json:
-        print(json.dumps({"fresh": fresh, "control_fails": control_fails, "probes": results}, indent=1))
-    elif fresh or control_fails:
-        if not args.quiet:
-            for r in results:
-                print(f"{r['probe']:<16} control={r.get('control', 'n/a'):<28} hits={r.get('hits') or '-'}")
-        verdict = ("QWEN4 CANDIDATE: " + ", ".join(fresh)) if fresh else "no new Qwen 4 candidate"
-        if control_fails:
-            verdict += f"  (UNTRUSTED: probes silent on control failure: {', '.join(control_fails)})"
-        print("=> " + verdict)
-    elif not args.quiet:
+        print(json.dumps({"alerts": alerts, "advisory": advisory,
+                          "control_fails": control_fails, "probes": results}, indent=1))
+    elif args.brief:
+        # A healthy watcher must leave a trace: an empty log cannot tell
+        # 'nothing shipped' from 'the job has not run since March'.
+        ok_probes = sum(1 for r in results if r.get("control", "ok").startswith("ok"))
+        repos = {a["repo"] for a in alerts}
+        print(f"{live_now()} controls={ok_probes}/{len(results)} "
+              f"alerts={len(fire)} candidates={','.join(sorted(repos)) or '-'} "
+              f"advisory={len(advisory)}"
+              + (" UNTRUSTED:" + ",".join(control_fails) if control_fails else ""))
+    elif lines or control_fails or not args.quiet:
         for r in results:
-            print(f"{r['probe']:<16} control={r.get('control', 'n/a'):<28} hits={r.get('hits') or '-'}")
-        # Say "already alerted", never "not anywhere" — the table above still
-        # lists the seen repos, and a line contradicting it is a bug report.
-        stale = sorted({h for r in results for h in r["hits"]} & seen)
-        if stale:
-            print("=> no NEW candidate (already alerted: " + ", ".join(stale) + ")")
-        else:
-            print("=> no Qwen 4 repo/id anywhere")
+            print(f"{r['probe']:<16} {r['tier']:<9} control={r.get('control','n/a'):<30} "
+                  f"hits={r.get('hits') or '-'}")
+        for a in advisory:
+            print(f"   info: {a}")
+        for _, line in lines:
+            print("ALERT: " + line)
+        if control_fails:
+            print("UNTRUSTED: probes silent on control failure: " + ", ".join(control_fails))
+        if not lines and not control_fails:
+            print("=> no Qwen 4 open weight anywhere (advisory tiers may still move)")
 
-    save_state({"seen": sorted(seen | {h for r in results for h in r["hits"]}), "last_run": _now()})
+    state["seen_created"] = sorted(set(state["seen_created"]) | {a["repo"] for a in alerts})
+    state["seen_weights"] = sorted(set(state["seen_weights"]) | {a["repo"] for a in alerts if a["weights"]})
+    state["seen_advisory"] = sorted(set(state["seen_advisory"]) | set(advisory))
+    save_state(state)
 
-    if fresh:
+    if any(a["new_weights"] for a in alerts):
+        return 10
+    if any(a["new_created"] for a in alerts):
         return 10
     return 20 if control_fails else 0
-
-
-def _now() -> str:
-    import datetime
-
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 if __name__ == "__main__":
