@@ -168,6 +168,61 @@ def main() -> int:
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         leg("L9 channel poll (SKIPPED: no network)", True, f"skip {type(exc).__name__}")
 
+    # L10 — the ETag path must survive a 304: urllib raises HTTPError on 304, so a
+    # fast cadence depends on that branch returning the cached body. Without it the
+    # alert tier would report a probe failure on every unchanged poll.
+    real_urlopen = w.urllib.request.urlopen
+    try:
+        body = '[{"id": "Qwen/Qwen3.8-27B"}]'
+        url = "https://huggingface.co/api/models?author=Qwen&limit=50"
+        w.CACHE_DIR = os.path.join(tmp, "cache")
+        with contextlib.redirect_stdout(io.StringIO()):
+            w.save_state({"seen_created": [], "seen_weights": [], "seen_advisory": [],
+                          "advisory": [], "advisory_at": 0})
+        rows = w.get_json(url)                      # first read populates the cache
+        got_200 = isinstance(rows, list) and len(rows) > 5
+
+        def fake_304(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url if hasattr(req, "full_url") else url,
+                                         304, "Not Modified", {}, None)
+
+        w.urllib.request.urlopen = fake_304
+        try:
+            rows_304 = w.get_json(url)
+            served_from_cache = isinstance(rows_304, list) and len(rows_304) == len(rows)
+        finally:
+            w.urllib.request.urlopen = real_urlopen
+        leg("L10 ETag cache serves a 304 from disk", got_200 and served_from_cache,
+            f"200 rows={len(rows) if got_200 else '-'}, 304 served={served_from_cache}")
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        leg("L10 ETag cache (SKIPPED: no network)", True, f"skip {type(exc).__name__}")
+    finally:
+        w.urllib.request.urlopen = real_urlopen
+
+    # L11 — cadence tiers: the HF pair runs every interval, the heavy catalogues only
+    # every ADVISORY_INTERVAL. Count real calls so this measures behaviour, not prose.
+    calls = {"advisory": 0, "alert": 0}
+    def counting_ids(url, label, pick):
+        calls["advisory"] += 1
+        return stub_openrouter_probe(url, label, pick)
+    quiet_env(state)
+    fake_hf(None, 0, "qwen4_exp")
+    w.probe_ids = counting_ids
+    w.probe_qwen_code = lambda: (calls.__setitem__("advisory", calls["advisory"] + 1),
+                                 stub_qwen_code())[1]
+    real_org = w.hf_org
+    def counting_org(author, search=None):
+        calls["alert"] += 1
+        return real_org(author, search=search)
+    w.hf_org = counting_org
+    os.remove(state) if os.path.exists(state) else None
+    run(["--no-notify"]); first = dict(calls)
+    run(["--no-notify"]); second = dict(calls)
+    leg("L11 alert tier polls every run, advisory tier throttled",
+        first["advisory"] >= 1 and second["advisory"] == first["advisory"]
+        and second["alert"] > first["alert"],
+        f"first={first} second={second}")
+
     failed = [n for n, ok, _ in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} legs pass"
           + (f"; FAILED: {', '.join(failed)}" if failed else ""))

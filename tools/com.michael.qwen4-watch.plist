@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Watcher for the Qwen 4 open-weight launch: 15 min cadence, same shape as
-     macwatch (system python, not a venv; launchd re-execs the script each
-     interval so a code change needs no restart). Cadence also clears Android's
-     ~2-minute notification-cooldown window, so two real alerts can't be merged. -->
+<!-- Watcher for the Qwen 4 open-weight launch: 75 s cadence, same shape as macwatch
+     (system python, not a venv; launchd re-execs the script each interval so a code
+     change needs no restart). Cheap because HF answers If-None-Match with 304/0 bytes
+     (measured: 20 back-to-back polls, all 200, no rate-limit headers) — the 5.96 MB
+     models.dev and the 813 KB OpenRouter catalogues are advisory and throttled to
+     900 s inside the script, OpenRouter's own cache-control asking for max-age=120.
+     75 s also clears Android's ~2-minute notification-cooldown window. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>com.michael.qwen4-watch</string>
   <key>ProgramArguments</key><array>
@@ -13,7 +16,7 @@
   </array>
   <key>WorkingDirectory</key><string>/Users/michael/localllm</string>
   <key>RunAtLoad</key><true/>
-  <key>StartInterval</key><integer>900</integer>
+  <key>StartInterval</key><integer>75</integer>
   <key>ThrottleInterval</key><integer>60</integer>
   <key>StandardOutPath</key><string>/Users/michael/.localllm/logs/qwen4-watch.log</string>
   <key>StandardErrorPath</key><string>/Users/michael/.localllm/logs/qwen4-watch.log</string>

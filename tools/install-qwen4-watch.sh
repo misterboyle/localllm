@@ -30,6 +30,9 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST_DST"
 launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
 sleep 6
 LOG="$LOG_DIR/qwen4-watch.log"
+# Read the cadence back from the installed artifact rather than restating it: a
+# hardcoded "15 min" here was already wrong once by the time it printed.
+INTERVAL="$(/usr/libexec/PlistBuddy -c "Print :StartInterval" "$PLIST_DST" 2>/dev/null || echo '?')"
 log "installed: $(launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E 'state|last exit' | tr -s ' ' | paste -sd' ' -)"
-log "first run logged below (exit 0 and no ALERT line = not shipped, re-checked every 15 min)"
+log "first run logged below (exit 0 and no ALERT line = not shipped; alert tier every ${INTERVAL}s, advisory tier every 900s)"
 tail -8 "$LOG" 2>/dev/null || log "no log yet at $LOG"

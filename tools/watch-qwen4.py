@@ -30,19 +30,26 @@ Alert cadence must outlast Android's ~2-minute notification-cooldown window
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 STATE_FILE = os.path.expanduser("~/.localllm/watch/qwen4.json")
 TOPIC_FILE = os.path.expanduser("~/.localllm/watch/ntfy_url")
+CACHE_DIR = os.path.expanduser("~/.localllm/watch/cache")
 USER_AGENT = "localllm-watch-qwen4/2.0"
 TIMEOUT = 25
 PRIORITY = "3"  # macwatch law: always 3, no branch that can shout.
+# Alert tier runs every launchd interval (75 s, macwatch's cadence); the advisory
+# tier is throttled by wall-clock age, because OpenRouter's own cache-control says
+# max-age=120 and models.dev is 5.96 MB per uncached read.
+ADVISORY_INTERVAL = 900
 
 # Qwen4 / Qwen-4 / Qwen4.5 / qwen4-coder. Anchored on the name so Qwen3.8 and
 # Qwen-Image cannot match; fires on 4.5 too, which is also a launch.
@@ -69,10 +76,45 @@ LLAMA_ARCH_URL = "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/sr
 MLX_SERVE_RELEASES = "https://api.github.com/repos/ddalcu/mlx-serve/releases?per_page=8"
 
 
+def _cache_paths(url: str) -> tuple:
+    key = hashlib.sha1(url.encode()).hexdigest()[:16]
+    return os.path.join(CACHE_DIR, key + ".json"), os.path.join(CACHE_DIR, key + ".etag")
+
+
 def get_json(url: str) -> object:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read().decode())
+    """GET with an ETag cache, so a fast cadence costs nothing when nothing moved.
+
+    Measured 2026-11-06: HF answers If-None-Match with 304 / 0 bytes (and served 20
+    back-to-back polls at 200 with no rate-limit headers), and models.dev does the
+    same on a 5.96 MB document. The cache file is what a 304 is read from, so a
+    304 with no cache on disk is a hard error, never an empty answer.
+    """
+    body_path, etag_path = _cache_paths(url)
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        with open(etag_path) as fh:
+            headers["If-None-Match"] = fh.read().strip()
+    except OSError:
+        pass
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            body = resp.read().decode()
+            etag = resp.headers.get("ETag", "")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304 and os.path.exists(body_path):
+            with open(body_path) as fh:
+                return json.load(fh)
+        raise
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    tmp = body_path + ".tmp"
+    with open(tmp, "w") as fh:
+        fh.write(body)
+    os.replace(tmp, body_path)
+    if etag:
+        with open(etag_path, "w") as fh:
+            fh.write(etag)
+    return json.loads(body)
 
 
 def name_of(repo_id: str) -> str:
@@ -293,8 +335,9 @@ def load_state() -> dict:
             data = json.load(fh)
     except (OSError, json.JSONDecodeError):
         data = {}
-    for key in ("seen_created", "seen_weights", "seen_advisory"):
+    for key in ("seen_created", "seen_weights", "seen_advisory", "advisory"):
         data.setdefault(key, [])
+    data.setdefault("advisory_at", 0)
     return data
 
 
@@ -320,7 +363,8 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.reset:
-        save_state({"seen_created": [], "seen_weights": [], "seen_advisory": []})
+        save_state({"seen_created": [], "seen_weights": [], "seen_advisory": [],
+                    "advisory": [], "advisory_at": 0})
         print("state cleared")
         return 0
     if args.test_ping:
@@ -343,22 +387,49 @@ def main() -> int:
         return 0 if rows else 20
 
     state = load_state()
-    probes = [
+    alert_probes = [
         ("hf_upstream", lambda: probe_repos(UPSTREAM, "alert", "hf_upstream")),
         ("hf_runnable", lambda: probe_repos(QUANT_ORGS, "alert", "hf_runnable")),
+    ]
+    advisory_probes = [
         ("openrouter", lambda: probe_ids("https://openrouter.ai/api/v1/models", "openrouter", openrouter_pick)),
         ("models.dev", lambda: probe_ids("https://models.dev/api.json", "models.dev", modelsdev_pick)),
         ("qwen-code-prs", probe_qwen_code),
     ]
 
-    results, failures = [], []
-    for name, fn in probes:
-        try:
-            results.append(fn())
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError) as exc:
-            failures.append(f"{name}: {type(exc).__name__}")
-            results.append({"probe": name, "tier": "?", "hits": [],
+    def run(probes):
+        out, fails = [], []
+        for name, fn in probes:
+            try:
+                out.append(fn())
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError,
+                    KeyError, urllib.error.HTTPError) as exc:
+                fails.append(f"{name}: {type(exc).__name__}")
+                out.append({"probe": name, "tier": "?", "hits": [],
                             "control": f"FAIL({type(exc).__name__})", "detail": {}})
+        return out, fails
+
+    results, failures = run(alert_probes)
+
+    # Cadence tiers. The launch lives or dies on the Hugging Face org listing, and
+    # HF answers a conditional GET with 304/0 bytes, so that pair runs every
+    # interval (macwatch's 75 s). Advisory catalogues are throttled by wall-clock
+    # age — a cached result is only trusted if its controls passed, so a stale
+    # failure can never mute a later run or fake a zero.
+    age = time.time() - float(state.get("advisory_at") or 0)
+    cached = state.get("advisory") or []
+    cached_ok = bool(cached) and all(str(r.get("control", "ok")).startswith("ok") for r in cached)
+    advisory_age = 0
+    if cached_ok and age < ADVISORY_INTERVAL:
+        results += [dict(r, cached_age=int(age)) for r in cached]
+        advisory_age = int(age)
+    else:
+        adv, adv_fails = run(advisory_probes)
+        results += adv
+        failures += adv_fails
+        if not adv_fails:
+            state["advisory"] = adv
+            state["advisory_at"] = time.time()
 
     alerts, advisory = [], []
     upstream_hits = [h for r in results if r["probe"] == "hf_upstream" for h in r["hits"]]
@@ -407,11 +478,13 @@ def main() -> int:
         print(f"{live_now()} controls={ok_probes}/{len(results)} "
               f"alerts={len(fire)} candidates={','.join(sorted(repos)) or '-'} "
               f"advisory={len(advisory)}"
+              + (f"@{advisory_age}s(cached)" if advisory_age else "(fresh)")
               + (" UNTRUSTED:" + ",".join(control_fails) if control_fails else ""))
     elif lines or control_fails or not args.quiet:
         for r in results:
+            age_note = f" (cached {r['cached_age']}s)" if r.get("cached_age") else ""
             print(f"{r['probe']:<16} {r['tier']:<9} control={r.get('control','n/a'):<30} "
-                  f"hits={r.get('hits') or '-'}")
+                  f"hits={r.get('hits') or '-'}{age_note}")
         for a in advisory:
             print(f"   info: {a}")
         for _, line in lines:
