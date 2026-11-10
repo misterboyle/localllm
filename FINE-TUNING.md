@@ -299,3 +299,34 @@ frontier-size model with the rules already in context, the measured output was a
 — so the honest first question is *"can I afford the instruction block in every request?"* If
 yes, the adapter is a luxury; if the model is small or the block is competing with the work,
 it is the cheap way to move the distribution.
+
+## 10. Fine-tuning Flash-Next itself: only two cases pay
+
+Behavioural LoRA on the 125B is the weakest use of the technique we have. The reasons to
+fine-tune nearly all describe a gap the flagship does not have (it obeys stated rules in 0.9 s,
+§9), the base rotates every few weeks so any adapter is born orphaned, and the mechanics are
+bad: `qwen4_exp` loads in no mlx-lm, per-expert adapters are ~1.9 B trainable (28 GB of
+optimizer state) on top of a 70.1 GiB resident base, i.e. a 512 GB job for a behaviour the model
+already has. Flagships are worth using as **teacher, judge and data factory** — our 45,707 traced
+tool calls came out of them, and distilling those into a 4-8B needs no training on the big model.
+
+The two exceptions, where the shipped artefact genuinely is not the lab's model:
+
+1. **Quantization recovery** (§8). What we serve is a lossy derivative of Flash-Next; repairing
+   *our* loss against the bf16 teacher is a training run that pays for itself in perplexity.
+2. **The draft/MTP head.** `mtp-heads/MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf` is trained
+   against its target by definition, and accepted-token rate is our largest live tokens/s lever.
+   The whole `--spec-draft-n-max` ladder in `[[mtp-speculative-decoding]]` is characterizing a
+   component we could instead *train* — the only place in this repo where training a component of
+   the big model is clearly the right instrument.
+
+**Regression gate for any adapter, before you train** (afterwards the control is unrecoverable):
+a probe battery outside the target task — instruction-following, multi-step reasoning, code,
+schema adherence, multilingual, refusal/safety — ~50-100 prompts each, since you are testing for
+the *absence* of harm and need power. Score **k=5 generations per prompt at the serving
+temperature** base vs adapted and report the per-prompt correct-rate delta plus the count of
+prompts that collapsed (mean scores hide it; LoRA/DoRA fall off a learning-rate cliff). Pin base
+revision, chat template, quantization, decoding and thinking level, and measure base-vs-base
+variance first so a regression has to beat it. Reject a run that wins its own task and costs
+elsewhere. We already have the precedent for why: `turbo3` KV read 165.6 perplexity (27× f16) and
+still wrote coherent text — "it still looks fine" is not an instrument.
