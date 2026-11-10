@@ -220,3 +220,82 @@ been frozen for a month — post-training against a moving harness collapses und
 shift, and a good harness bolted on afterwards is worse than one present during training —
 and (b) a gate exists that can reject a round: clean-set loss delta ≤ 0.010 plus a
 general-capability probe, not "it felt better in the transcript".
+
+## 9. Worked example: the voice adapter (measured "before", 2026-11-10)
+
+What a **shape** failure is, demonstrated on our own server. Facts fixed, rules fixed, only
+the distribution differs. Task: a three-sentence release note about the 26.11.1 → 26.10.2
+rollback (leak, 163 GB/day writes, never-unpinning wired pool, 512K single-session limit),
+system prompt carrying the house rules (flat declarative, one claim per sentence, hedge where
+soft, a fact carries the weight, no mood-dashes, no closer, no label colons). Three samples,
+`mlx-flash`, temp 0.6, thinking off, 0.9 s each:
+
+```
+1  "We rolled back the inference server to version 26.10.2 to resolve an upstream memory leak
+    that generated 163 GB of disk writes per day. This defect caused the wired memory pool to
+    fail unpinning operations. Version 26.11.1 also cannot hold a 512K single-session context
+    alongside another process."
+2  "... to address an upstream memory leak that caused 163 GB of daily disk writes. The previous
+    build maintained a wired pool that never unpinned, leading to resource exhaustion over time..."
+3  "... to address a critical upstream memory leak in build 26.11.1. ... resulting in 163 GB of
+    disk writes per day. The instability also prevented the system from maintaining..."
+```
+
+Mechanical census (this is why shape is trainable and facts are not): **em-dashes 0/0/0,
+colons 0/0/0, sentences 3/3/3, hedges 0/0/0, words 47/54/51.** Every stated rule was obeyed, and
+the output still is not ours. What is left over is exactly the part no rule reached: the
+filler-verb frame (*to resolve / to address / caused … resulting in / leading to*), nominalised
+objects (*resource exhaustion*, *the instability*), the generic noun where we use the proper one
+(*the inference server* vs `mlx-flash`), the missing hedge, and in sample 3 an unsupported
+intensifier (*critical*) — which is a provenance failure, not a shape one, and is the one a
+gate can reject mechanically because "critical" is not in the input.
+
+Target register, same facts, ours: *"rolled mlx-flash back to 26.10.2 — 26.11.1's leak is
+upstream and unreleased; 163 GB/day of writes and a wired pool that never unpins."* Nothing was
+added or retrieved to get there. **The facts were already in the prompt in all four cases. Only
+the distribution differs — that difference is shape, and a distribution is what a few hundred
+gradient steps can move and a rule mostly cannot.**
+
+### The data (what to actually write)
+
+Rows are `(task, our line)` pairs — `{"messages":[{"role":"system",...},{"role":"user",
+content":"<the facts I was given>"},{"role":"assistant","content":"<the line I actually wrote>"}]}`:
+
+```json
+{"messages":[{"role":"system","content":"Write the changelog line for the facts given."},
+ {"role":"user","content":"server rollback 26.11.1 -> 26.10.2; leak is upstream, no fix released; 163 GB/day disk writes; wired pool never unpins; 512K single-session only"},
+ {"role":"assistant","content":"rolled mlx-flash back to 26.10.2 - 26.11.1's leak is upstream and unreleased; 163 GB/day of writes and a wired pool that never unpins"}]}
+```
+
+Sources, cheapest first: (1) the 20 attributed anchors in
+`~/wiki/wiki/concepts/voice-anchors.md` (verifiably human — the only safe style corpus we have);
+(2) dictation — ~150 status notes dictated into a memo and transcribed with the on-device
+SpeechAnalyzer CLI (see `[[apple-speechanalyzer]]`), which yields the unpunctuated lowercase
+register directly; (3) `gh api` over my own issue comments and release-note bodies I wrote.
+**Target 150-400 rows, then stop** — the measured plateau for tone is ~100-1,000 and 2,000
+repetitive rows have been seen to fail to converge. Do not scrape agent-written copy to
+bootstrap it: that inducts the thing we are trying to escape.
+
+### The process (about an hour of compute, on this box)
+
+```bash
+# 1. split by artefact, never by row (a line and its paragraph must not straddle the cut)
+#    -> ~/finetune/voice/{train,valid}.jsonl
+# 2. train a 4B-8B adapter: 10-17 GB peak, ~1 h at this size
+MLX_DISABLE_COMPILE=1 venv/bin/mlx_lm.lora --model mlx-community/Qwen3-4B-4bit --train \
+  --data ~/finetune/voice --mask-prompt --num-layers 16 --rank 16 --batch-size 2 \
+  --iters 300 --learning-rate 2e-5 --save-every 25 --adapter-path ~/finetune/adapters/voice
+# 3. COPY the checkpoint at minimum VAL loss out on purpose (the trainer keeps the last two)
+# 4. gate: same 20 held-out prompts, base vs base+adapter, same temp, side by side
+#    mechanical pre-screen (dashes/colons/filler verbs/intensifiers not in the input),
+#    then a blind human A/B - the author cannot grade his own voice
+# 5. if it passes: venv/bin/mlx_lm.fuse, quantize, serve as a profile; commit the row-file hash,
+#    the mlx-lm version and this command as its rebuild recipe
+```
+
+What it buys: the register arrives without the ~90-word rule block in every request, and it
+survives on a 4-8B model where that rule block leaks. What it does not buy: on a
+frontier-size model with the rules already in context, the measured output was already rule-clean
+— so the honest first question is *"can I afford the instruction block in every request?"* If
+yes, the adapter is a luxury; if the model is small or the block is competing with the work,
+it is the cheap way to move the distribution.
