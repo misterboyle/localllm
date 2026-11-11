@@ -12,6 +12,16 @@
 # Flags:
 #   --now    skip the idle wait and restart on the next sample
 #   --tries <n>  give up after n busy samples (default 240 = 20 min at 5 s)
+#
+# Env:
+#   MLXSERVE_BIN   which engine binary to boot — this is how a version bump is armed
+#                  (./serve:136 reads it; unset = the pinned default)
+#   READY_SAMPLES  boot wait in 2-second units (default 180; raise it when the SSD
+#                  prefix tier is big enough that its boot scan needs longer)
+#
+#   # example: arm a bump plus a config change on the next quiet moment
+#   MLXSERVE_BIN=~/.localllm/mlx-serve-26.11.2/mlx-serve-macos-arm64/mlx-serve \
+#     READY_SAMPLES=300 nohup tools/restart-mlxserve.sh mlx-flash >/dev/null 2>&1 &
 
 set -euo pipefail
 
@@ -138,8 +148,12 @@ log "port $PORT is down; starting"
 ./serve start "$SERVER"
 
 # --- verify: the boot banner is the receipt for every memory flag.
+# The wait is sized for a cold boot that has to SCAN the SSD prefix tier before it
+# answers: 26.11.x logs `[disk-cache] scanned N persisted entries (~200 GB)`, and a
+# 200 GB scan plus a 70 GB weight load can pass 6 min, which would print a FAILED that
+# is really just a slow boot. READY_SAMPLES is in 2-second units (default 180 = 6 min).
 ready=0
-for _ in $(seq 1 180); do
+for _ in $(seq 1 "${READY_SAMPLES:-180}"); do
   if curl -sf --max-time 3 "$METRICS" >/dev/null 2>&1; then ready=1; break; fi
   sleep 2
 done
