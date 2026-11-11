@@ -246,6 +246,16 @@
         // had already moved into a live slot, seen once; if it ever shows up twice
         // more AND the footprint does not fall after it, that is an upstream report.
         "--mtp",
+        // Cap the MTP draft depth at 4 instead of the adaptive 6 (26.11.x would let the
+        // planner reach 8 on eligible M5 NAX targets). Measured from this server's own
+        // `[spec-stats]` lines over 1,095 turns of the 26.10.2 run via
+        // `tools/mtp-yield.py`: speculation nets 0.93x vs plain decode across the file —
+        // 0.91x at 32-64k, 0.86x at 128-256k, paying only past 256k (1.24x). Acceptance
+        // is fine (~54%); the depth is wrong. The engine's own measured verify price at
+        // 256k+ is w3 15.4 ms / w4 17.3 ms vs w6 21.3 ms, so a 6-row round costs 39% more
+        // to land 1.66 tokens. Re-measure after the restart; if w4 does not pay, the same
+        // table decides between `--mtp-min-depth 3` and `--max-mtp-ctx`.
+        "--mtp-max-depth", "4",
         "--metrics",
         "--temp", "1.0",
         "--top-p", "0.95",
