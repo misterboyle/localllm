@@ -150,9 +150,11 @@ if [ "$ready" = "0" ]; then
   log "     likely cause on a version rollback. Move the tier aside -- deleting it loses"
   log "     nothing but warmth, every miss is handled as a cold prefill:"
   log '       mv ~/.mlx-serve/kv-cache ~/.mlx-serve/kv-cache.bak-<YYYYMMDD> && ./serve start '"$SERVER"
-  log '  2. or go back to the engine that was serving:'
+  log '  2. or go back to the engine that was serving (26.10.2 is the current pin):'
   # shellcheck disable=SC2016  # $HOME is deliberate: this line is a suggestion to paste, not to expand
-  log '       MLXSERVE_BIN=$HOME/.localllm/mlx-serve-26.11.1/mlx-serve-macos-arm64/mlx-serve ./serve start '"$SERVER"
+  log '       MLXSERVE_BIN=$HOME/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve ./serve start '"$SERVER"
+  log '     NOT 26.11.1: that build carries the #1091 batched-decode logits leak (~21 GB'
+  log '     surviving unload on this model). 26.11.2 is the first release with the fix.'
   exit 1
 fi
 log "server is answering again"
