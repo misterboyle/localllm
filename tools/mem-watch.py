@@ -98,6 +98,61 @@ def watch(base, interval, out, max_secs):
         time.sleep(interval)
 
 
+def epochs(rows, gap_secs):
+    """Split the series at engine restarts. Counters reset on boot, so a decrease in
+    lifetime `generation_tokens_total` is a restart signature the version alone cannot
+    show — 26.11.2 -> 26.11.2 with a new process looks identical in `version`."""
+    out, cur = [], []
+    for prev, r in zip([None] + rows[:-1], rows):
+        new = (prev is None or r["gen_tokens"] < prev["gen_tokens"]
+               or r["ts"] - prev["ts"] > gap_secs or r["version"] != prev["version"])
+        if new and cur:
+            out.append(cur)
+            cur = []
+        cur.append(r)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def judge(rows, label):
+    hours = (rows[-1]["ts"] - rows[0]["ts"]) / 3600
+    print(f"\n--- {label}: {len(rows)} samples over {hours:.1f} h, "
+          f"version {rows[0]['version']} ---")
+    byhour = {}
+    for r in rows:
+        byhour.setdefault(datetime.datetime.fromtimestamp(r["ts"]).strftime("%d %H"), []).append(r)
+    print(f"{'hour':7} {'n':>4} {'floor active':>12} {'floor unowned':>14} {'avail max':>10} {'exp tok':>9}")
+    floors = []
+    for h in sorted(byhour, key=lambda k: min(x["ts"] for x in byhour[k])):
+        b = min(byhour[h], key=lambda r: r["active_gib"])
+        floors.append(b["active_gib"])
+        print(f"{h:7} {len(byhour[h]):4} {b['active_gib']:12.2f} {b['unowned_gib']:14.2f} "
+              f"{max(r['available_gib'] for r in byhour[h]):10.2f} {b['exposure_tokens']:9,}")
+
+    base = rows[0]["exposure_tokens"]
+    exp = rows[-1]["exposure_tokens"] - base          # exposure GAINED in this epoch
+    idle = min(rows, key=lambda r: r["active_gib"])
+    unowned_last = statistics.median([r["unowned_gib"] for r in rows[-6:]])
+    print(f"idle floor: active {idle['active_gib']:.2f} GiB, unowned {idle['unowned_gib']:+.2f} GiB; "
+          f"batched exposure gained here: {exp:,} tokens; rejections: {max(r['rejected'] for r in rows)}")
+    ratchet = len(floors) >= 3 and floors[-1] - max(floors[:-1]) > 1.0
+    if hours < MIN_HOURS:
+        print(f"VERDICT: VOID — {hours:.1f} h is under the {MIN_HOURS} h the accumulation rate needs")
+    elif exp < MIN_EXPOSURE_TOKENS:
+        print(f"VERDICT: VOID — only {exp:,} tokens decoded with 2+ streams together. The leak "
+              f"lived in the batched-decode path, so this series could not have seen it. Run two "
+              f"sessions generating AT THE SAME TIME (or boot with --prefill-decode-share 0.25 "
+              f"and let the train prefill beside an interactive session), then re-report.")
+    elif unowned_last > 5 or ratchet:
+        print("VERDICT: FAIL — the idle floor carries unowned bytes; keep the #1071 report open")
+    elif unowned_last <= 1:
+        print(f"VERDICT: PASS — unowned {unowned_last:+.2f} GiB at the floor with {exp:,} "
+              f"batched tokens behind it")
+    else:
+        print(f"VERDICT: WATCH — unowned {unowned_last:+.2f} GiB is neither clean nor damning")
+
+
 def report(out):
     rows = []
     with open(out) as fh:
@@ -109,45 +164,16 @@ def report(out):
     if len(rows) < 6:
         sys.exit(f"only {len(rows)} samples in {out} — nothing to judge")
 
-    hours = (rows[-1]["ts"] - rows[0]["ts"]) / 3600
-    print(f"{len(rows)} samples, {hours:.1f} h, versions: "
-          f"{', '.join(sorted({r['version'] for r in rows}))}")
-    if rows[0]["version"] != rows[-1]["version"]:
-        print("  NOTE: a restart happened mid-series; judge each version separately "
-              "(--since / before that line) or a fresh run")
-
-    # hourly floor: the minimum active within each clock hour
-    byhour = {}
-    for r in rows:
-        byhour.setdefault(datetime.datetime.fromtimestamp(r["ts"]).strftime("%d %H"), []).append(r)
-    print(f"\n{'hour':7} {'n':>4} {'floor active':>12} {'floor unowned':>14} {'avail max':>10} {'exp tok':>9}")
-    floors = []
-    for h in sorted(byhour, key=lambda k: min(x["ts"] for x in byhour[k])):
-        b = min(byhour[h], key=lambda r: r["active_gib"])
-        floors.append(b["active_gib"])
-        print(f"{h:7} {len(byhour[h]):4} {b['active_gib']:12.2f} {b['unowned_gib']:14.2f} "
-              f"{max(r['available_gib'] for r in byhour[h]):10.2f} {b['exposure_tokens']:9,}")
-
-    exp = rows[-1]["exposure_tokens"]
-    idle = min(rows, key=lambda r: r["active_gib"])
-    unowned_last = statistics.median([r["unowned_gib"] for r in rows[-6:]])
-    print(f"\nidle floor: active {idle['active_gib']:.2f} GiB, unowned {idle['unowned_gib']:+.2f} GiB; "
-          f"batched-decode exposure this series: {exp:,} tokens; "
-          f"rejections: {max(r['rejected'] for r in rows)}")
-    ratchet = len(floors) >= 3 and floors[-1] - max(floors[:-1]) > 1.0
-    if hours < MIN_HOURS:
-        print(f"VERDICT: VOID — {hours:.1f} h is under the {MIN_HOURS} h the accumulation rate needs")
-    elif exp < MIN_EXPOSURE_TOKENS:
-        print(f"VERDICT: VOID — only {exp:,} tokens decoded with 2+ streams together. "
-              f"The leak lived in the batched-decode path, so this series could not have "
-              f"seen it. Run two sessions generating AT THE SAME TIME, then re-report.")
-    elif unowned_last > 5 or ratchet:
-        print("VERDICT: FAIL — the idle floor carries unowned bytes; keep the #1071 report open")
-    elif unowned_last <= 1:
-        print(f"VERDICT: PASS — unowned {unowned_last:+.2f} GiB at the floor with "
-              f"{exp:,} batched tokens behind it")
-    else:
-        print(f"VERDICT: WATCH — unowned {unowned_last:+.2f} GiB is neither clean nor damning")
+    eps = epochs(rows, 600)
+    if len(eps) > 1:
+        print(f"{len(eps)} engine epochs in this file (a restart resets the counters); "
+              f"judging the current one only")
+        for i, e in enumerate(eps[:-1], 1):
+            exp = e[-1]["exposure_tokens"] - e[0]["exposure_tokens"]
+            print(f"  epoch {i}: {e[0]['clock']} -> {e[-1]['clock']}, v{e[0]['version']}, "
+                  f"floor {min(r['active_gib'] for r in e):.2f} GiB, "
+                  f"exposure {exp:,} tok, verdict: not judged")
+    judge(eps[-1], f"epoch {len(eps)} (current)")
 
 
 def main():

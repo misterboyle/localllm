@@ -217,19 +217,32 @@
         "--serve",
         "--ctx-size", "524288",
         "--kv-quant", "8",
-        // Pin of intent, and a no-op on the 26.10.2 binary this entry now runs (its
-        // default is 0). It was 26.11.1's change to 0.25, which is when our refusals
-        // started — 0 hard failures in 2,091 requests on 26.10.x vs 30 in 1,964 on
-        // 26.11.1 — but the CAUSE is upstream, not the schedule: #1091, shipped first
-        // in v26.11.1, leaked N rows of stacked logits per batched decode token "for
-        // as long as two or more streams decoded together", and #1071 (same model, same
-        // 128 GB box) measured ~21 GB surviving unload. That is why two sessions going
-        // felt like the trigger — batched decode is the leak path — and why the floor
-        // rose while billed per-session bytes did not (20.85 vs 20.61 KB/token). #1091
-        // is merged but unreleased; forward-test when v26.11.2+ lands, and until then
-        // the discriminator is the hourly MIN of mlx_active_bytes over 24-48 h, not a
-        // pre/post-unload delta (test duration << accumulation time).
-        "--prefill-decode-share", "0",
+        // TAKING THE 26.11.x DEFAULT (0.25) as of 2026-11-12. We pinned 0 to escape the
+        // 26.11.1 refusal regime (0 hard failures in 2,091 requests on 26.10.x vs 30 in
+        // 1,964 on 26.11.1), but the cause was #1091, not the schedule: N rows of stacked
+        // logits leaked per batched decode token "for as long as two or more streams
+        // decoded together", and #1071 (same model, same 128 GB box) measured ~21 GB
+        // surviving unload. That is why two sessions going felt like the trigger — batched
+        // decode IS the leak path — and why the floor rose while billed per-session bytes
+        // did not (20.85 vs 20.61 KB/token). The fix shipped in v26.11.2, which we have run
+        // since 2026-11-11 14:46, so the new default was never assessable until now — and
+        // staying on the old schedule is not free either: at 0 a long prefill starves every
+        // decoding stream outright, which is the felt cost of the 512K pool law (the train
+        // prefills 400k and the interactive session stops dead).
+        // COST, stated honestly: the flag's own help says it "also narrows that prefill's
+        // chunks", and prefill on this model is chunk-sensitive (upstream: 4096 -> 1071,
+        // 2048 -> 1029 tok/s; MoE gather 28.3 TFLOP/s at 4096 vs 14.2 at 1024). And
+        // `--prefill-chunk` is a CEILING, not a floor, so this flag is its own only off
+        // switch. Note also that the 26.11.1 `width=512` lines were admission-planner
+        // PROBES (8192->4096->2048->1024->512, printing the narrowest), not executed chunk
+        // sizes — they proved plan pressure, not striding. MLX_SERVE_PREFILL_TRACE does not
+        // survive in 26.11.2, so the observable is the counter-derived cold rate.
+        // PASS (keep it): requests_rejected_total stays 0; the hourly floor of
+        // mlx_active_bytes is flat WITH batched-decode exposure over ~20k tokens
+        // (`python3 tools/mem-watch.py --report`); aggregate cold prefill stays within
+        // ~15% of the 1,953 t/s measured on 26.11.2 at share 0. FAIL: put back
+        // "--prefill-decode-share", "0" — which also removes the leak exposure, so a
+        // ratcheting floor under 0.25 is an upstream report, not just a revert.
         // NOT set, on purpose: `--no-prefix-cache-ram` (drop idle prefixes from
         // RAM). Idle RAM retention is what we have always run and want to keep.
         // Measured across all 30 hard failures on 26.11.1 (26.10.x: zero): the
