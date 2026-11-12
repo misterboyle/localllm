@@ -101,9 +101,22 @@ def watch(base, interval, out, max_secs):
 def epochs(rows, gap_secs):
     """Split the series at engine restarts. Counters reset on boot, so a decrease in
     lifetime `generation_tokens_total` is a restart signature the version alone cannot
-    show — 26.11.2 -> 26.11.2 with a new process looks identical in `version`."""
+    show — 26.11.2 -> 26.11.2 with a new process looks identical in `version`.
+
+    Samples taken while the engine is DOWN (a restart window) carry no memory fields at
+    all; they used to carve a phantom epoch reading "floor 0.00 GiB", which is a lie
+    about a machine that was merely not answering. They are dropped and counted here."""
+    good, dropped = [], 0
+    for r in rows:
+        if r["active_gib"] <= 1.0 or r["error"]:
+            dropped += 1
+            continue
+        good.append(r)
+    if dropped:
+        print(f"{dropped} sample(s) dropped: engine not answering (a restart window), "
+              f"not a memory floor of zero")
     out, cur = [], []
-    for prev, r in zip([None] + rows[:-1], rows):
+    for prev, r in zip([None] + good[:-1], good):
         new = (prev is None or r["gen_tokens"] < prev["gen_tokens"]
                or r["ts"] - prev["ts"] > gap_secs or r["version"] != prev["version"])
         if new and cur:
@@ -165,6 +178,9 @@ def report(out):
         sys.exit(f"only {len(rows)} samples in {out} — nothing to judge")
 
     eps = epochs(rows, 600)
+    if not eps:
+        sys.exit("every sample in this window was taken with the engine not answering — "
+                 "nothing to judge yet")
     if len(eps) > 1:
         print(f"{len(eps)} engine epochs in this file (a restart resets the counters); "
               f"judging the current one only")
