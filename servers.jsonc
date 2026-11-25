@@ -284,6 +284,47 @@
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":524288}}"
       ]
     },
+    // MLX FLASH-NEXT @1M — bigmac's daily (added 2026-11-25). Same model, same
+    // flags as mlx-flash; ONE difference: --ctx-size 1048576 with YaRN factor 4.0
+    // over the native 262144. Why this box carries it and the MacBook cannot: the
+    // 1M OOM that closed the question on 2026-09-17 (~105.6GB active, physical
+    // wall, kIOGPU error) was measured on 128 GB. bigmac is a 512 GB M5 Ultra,
+    // where 1M Q8 KV is ~18GB above ~75GB of resident weights — a fit, not a
+    // reach. Same silicon class as the Reddit M5-Ultra benchmark thread
+    // (wiki: m5-ultra-benchmark-reddit-2026-11-18), whose top Flash-Next rows ran
+    // YaRN x4 and filled 1M at 93.2 t/s.
+    // ENGINE: bigmac has only 26.11.2 on disk, so the pin travels by env in that
+    // box's ~/.zprofile —
+    //   MLXSERVE_BIN=~/.localllm/mlx-serve-26.11.2/mlx-serve-macos-arm64/mlx-serve
+    // Do NOT raise serve's default: 26.10.2 is lilmac's leak rollback and it is
+    // running it today. Prefill-decode-share takes the 26.11.x default (0.25) for
+    // the reasons argued under mlx-flash; MTP stays at engine defaults (see the
+    // 1.49x verdict there — do not re-arm a depth cap).
+    // Shares :30085 with mlx-flash, so the collision guard keeps them apart — but
+    // only by pidfile, so a server started outside ./serve is invisible to it.
+    // Never run both.
+    "mlx-flash-big": {
+      "backend": "mlxserve",
+      "model": "~/.localllm/models/Qwen3.8-Flash-Next-MLX-Serve-mixed-4-8bit",
+      "port": 30085,
+      "args": [
+        "--os-reserve-gib", "0",
+        "--serve",
+        "--ctx-size", "1048576",
+        "--kv-quant", "8",
+        "--mtp",
+        "--metrics",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        // 3.4 TiB free on this volume; the 64 GiB reserve the disk-tier note asks
+        // for is not a constraint here.
+        "--prefix-cache-disk", "200GB",
+        "--shutdown-persist-secs", "45",
+        // YaRN long-context override (native max_position_embeddings is 262144).
+        "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":1048576}}"
+      ]
+    },
     // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on STOCK
     // mlx-serve (binary pinned in ./serve — 26.11.1 since 2026-11-03). 26.10.2 was
     // the first release where "Sushi's GLM-5.3, MiMo and BF16 Flash Next packs load
