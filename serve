@@ -132,8 +132,18 @@ OPTIQ_VENV="${HOME}/.localllm/venvs/optiq"
 # shared {% for %} scope; fixed on main (a86ce29b5, 2026-11-02) but 2 commits AHEAD of
 # the v26.11.1 tag, so wait for the next patch rather than building from main.
 # Qwen3.8-Flash-Next is immune (its template re-initialises every loop-local name).
-# Env-overridable (same pattern as SUSHI_BIN below) so a change is a one-liner, no edit.
-MLXSERVE_BIN="${MLXSERVE_BIN:-${HOME}/.localllm/mlx-serve-26.10.2/mlx-serve-macos-arm64/mlx-serve}"
+# WHICH ENGINE RUNS IS A PROPERTY OF THE BOX, NOT OF THE SHELL. One symlink per box is the
+# whole mechanism: ~/.localllm/bin/mlx-serve -> the versioned install this box runs, so
+# Terminal, ssh, an agent's /bin/sh -c and launchd all resolve the same binary.
+#   ln -sfn ~/.localllm/mlx-serve-<v>/mlx-serve-macos-arm64/mlx-serve ~/.localllm/bin/mlx-serve
+# Do NOT carry the pin in a shell rc file. ~/.zprofile is read by login zsh and by nothing
+# else (measured: `zsh -l -c` sees it; `zsh -c`, `bash -lc` and `/bin/sh -c` do not), so an
+# env pin is invisible to exactly the callers that launch servers from scripts. That cost
+# bigmac 16 minutes dark on 2026-11-25: the pin was in .zprofile, an agent-started `./serve`
+# never saw it, fell back to the default below, and bigmac has no such install.
+# Specific-case override, still no edit (the rollback lever, same pattern as SUSHI_BIN):
+#   MLXSERVE_BIN=<path> ./serve start <name>
+MLXSERVE_BIN="${MLXSERVE_BIN:-${HOME}/.localllm/bin/mlx-serve}"
 
 # sushi (beamivalice/sushi, brew install beamivalice/tap/sushi) — the only engine
 # that loads Sushi EXL3 packs (GLM-5.3-Flash 2.4bpw). /opt/homebrew/bin so the
@@ -149,12 +159,30 @@ build_mlxserve_cmd() {
   port=$(server_field "$name" port)
   args=$(server_args "$name")
 
+  # Check the instrument before trusting its output. The --help probe below decides
+  # "does this build have the flag" from the text the binary prints, and a binary that is
+  # missing or unprintable yields EMPTY output, which reads exactly like "pre-26.11 build"
+  # -- so a broken pointer used to show up as a version difference plus a silently dropped
+  # flag. Say what is actually wrong instead.
+  if [ ! -x "$MLXSERVE_BIN" ]; then
+    echo "  error: no executable mlx-serve engine at $MLXSERVE_BIN" >&2
+    echo "         point this box's active build at one:  ln -sfn ~/.localllm/mlx-serve-<v>/mlx-serve-macos-arm64/mlx-serve ~/.localllm/bin/mlx-serve" >&2
+    echo "         or override for one call:  MLXSERVE_BIN=<path> ./serve start $name" >&2
+    return 1
+  fi
+
   # Flags servers.jsonc passes that only exist in newer engines. Pinning an older
   # binary -- the 26.10.2 leak rollback, or any future one-liner -- must not die on an
   # unknown flag, and dropping one silently is worse than saying so. Probe the resolved
   # binary's own --help (no model load, ~0.1s) and report what comes out. Diagnostics
   # go to stderr: this function's stdout IS the command line.
-  help=$("$MLXSERVE_BIN" --help 2>&1 || true)
+  help=$("$MLXSERVE_BIN" --help 2>&1) || {
+    # The probe failing is not "an old build", it is "I cannot read this engine".
+    # (Telling them apart by empty output would not have worked either: a nonexistent
+    # path puts the SHELL's 'No such file or directory' into $help, which is non-empty.)
+    echo "  error: $MLXSERVE_BIN --help failed; cannot tell what this build supports" >&2
+    return 1
+  }
   if ! printf '%s' "$help" | grep -q -- '--shutdown-persist-secs'; then
     case " $args " in
       *" --shutdown-persist-secs "*)
