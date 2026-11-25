@@ -318,8 +318,11 @@
         "--top-p", "0.95",
         "--top-k", "20",
         // 3.4 TiB free on this volume; the 64 GiB reserve the disk-tier note asks
-        // for is not a constraint here.
-        "--prefix-cache-disk", "200GB",
+        // for is not a constraint here. Raised 200GB -> 500GB 2026-11-25: at
+        // ~48 prefixes/day x 1.22 GB the cap was ~2.5 days of retention on
+        // lilmac; 500 GB is ~10 days, and 1 TB pays for nothing until the cache
+        // actually grows past 200 GB.
+        "--prefix-cache-disk", "500GB",
         "--shutdown-persist-secs", "45",
         // YaRN long-context override (native max_position_embeddings is 262144).
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":1048576}}"
