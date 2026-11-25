@@ -328,6 +328,52 @@
         "--config-overrides", "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144},\"max_position_embeddings\":1048576}}"
       ]
     },
+    // DeepSeek-V4.1-Flash-1017 "Lossless" (ddalcu; arch deepseek_v41 — bit-exact
+    // repack of the release: MXFP4 routed experts, FP8 trunk, dense bf16
+    // head/wo_a; 3 MTP draft stages + markov/confidence heads and the vision tower
+    // ride along; 1M native, YaRN x16 already in config.json, so NO
+    // --config-overrides here). 477 GiB on disk = 288 GB resident + 189 GiB of
+    // Engram n-gram tables in engram/, which the engine reads from SSD per token
+    // and never wires. It must stay on the internal drive: the pack author
+    // measured Engram on an external disk at ~27% slower prefill.
+    // EXPECTATION, same silicon + same engine version, measured by someone else:
+    // wiki [[m5-ultra-benchmark-reddit-2026-11-18]] Index 33 — 58.3 t/s @4K ->
+    // 55.3 @1M, prefill 2,852 -> 1,643 t/s, peak wired 299.7 GiB @4K -> 328.4 @1M,
+    // all at engine defaults. ddalcu have never loaded this pack on a 512 GB
+    // machine themselves, so our first boot is the test of the ceiling claim.
+    // MEMORY-EXCLUSIVE with every other big entry, mlx-flash-big above all: 288 GB
+    // of weights plus the ~75 GB flash-big holds crosses the ~384 GiB Metal wired
+    // pool, and the pool is a wall no --os-reserve-gib moves. Its port (30088) is
+    // unique, so serve's collision guard does NOT keep them apart —
+    // ./serve stop mlx-flash-big FIRST.
+    // NOT set, deliberately, so the first arm stays comparable to that row:
+    // --kv-quant (this is the reference pack; 8-bit KV is the lever if a second
+    // 1M session is wanted), --prefix-cache-disk (lever #1 if agentic re-prefill
+    // hurts — Engram's own demand is ~2 KB/token, so the only contention is KV
+    // restore), --os-reserve-gib 0 (that flag exists because the 128 GB box could
+    // not admit its own prefill; here the default 8 GB is affordable headroom).
+    // Speculative decode stays at engine defaults: V4.1 auto-runs the draft stages
+    // the pack ships unless --no-mtp; --dspark is the embedded ds4 runtime for
+    // .gguf inputs and does nothing to a safetensors pack.
+    // Sampling: the 1017 card's recommendation (temp 1.0, top_p 0.95 — the card
+    // also allows 1.0). Note these are mostly inert in DeepSeek's thinking mode:
+    // temperature is accepted and ignored, top_p is floored at 0.95. Thinking is
+    // ON by default at effort "high"; effort is a per-request reasoning_effort
+    // field (low|high|max, or 1-100) — there is no server-side flag for it.
+    "mlx-deepseek": {
+      "backend": "mlxserve",
+      "model": "~/.localllm/models/DeepSeek-V4.1-Flash-1017-MLX-Serve-Lossless",
+      "port": 30088,
+      "args": [
+        // HTTP mode is NOT mlx-serve's default (interactive chat is).
+        "--serve",
+        // 1M is the pack's own window; naming it keeps the opencode limits honest.
+        "--ctx-size", "1048576",
+        "--temp", "1.0",
+        "--top-p", "0.95",
+        "--metrics"
+      ]
+    },
     // glm-sushi: GLM-5.3-Flash Sushi-2.4bpw (EXL3, 97.8 GB pack) on STOCK
     // mlx-serve (binary pinned in ./serve — 26.11.1 since 2026-11-03). 26.10.2 was
     // the first release where "Sushi's GLM-5.3, MiMo and BF16 Flash Next packs load
